@@ -16,3 +16,6 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
+
+# 本地截图（不入库）
+.shots/
