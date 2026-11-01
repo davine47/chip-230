@@ -1,0 +1,6 @@
+{# Redis 二级看板的子导航：键空间 / 实例 / 命令 #}
+<nav class="subnav">
+  <a class="subnav__link {{ 'subnav__link--active' if request.path == '/redis' }}" href="/redis">键空间</a>
+  <a class="subnav__link {{ 'subnav__link--active' if request.path == '/redis/instance' }}" href="/redis/instance">实例</a>
+  <a class="subnav__link {{ 'subnav__link--active' if request.path == '/redis/commands' }}" href="/redis/commands">命令</a>
+</nav>

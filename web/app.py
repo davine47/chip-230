@@ -19,7 +19,7 @@ from functools import wraps
 from pathlib import Path
 
 import redis
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request
 
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parent))
@@ -218,24 +218,36 @@ def inject_globals() -> dict:
 
 @app.get("/")
 def board():
-    return render_template("index.html", instance=instance_summary())
+    return render_template("index.html")
 
 
 @app.get("/redis")
 def redis_page():
+    """Redis 二级看板：键空间（默认页）。"""
     return render_template("redis.html", instance=instance_summary())
 
 
-@app.get("/instance")
-def instance_page():
+@app.get("/redis/instance")
+def redis_instance_page():
     return render_template("instance.html", instance=instance_summary(force=True))
 
 
-@app.get("/commands")
-def commands_page():
+@app.get("/redis/commands")
+def redis_commands_page():
     return render_template(
         "commands.html", groups=COMMAND_GROUPS, versions=VERSION_NOTES, limits=LIMITS
     )
+
+
+# 老地址 301 到二级看板下的新路径，避免收藏夹失效
+@app.get("/instance")
+def legacy_instance_page():
+    return redirect("/redis/instance", code=301)
+
+
+@app.get("/commands")
+def legacy_commands_page():
+    return redirect("/redis/commands", code=301)
 
 
 # --------------------------------------------------------------------------

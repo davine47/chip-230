@@ -216,6 +216,10 @@ code {
   gap: 18px;
 }
 
+.modules--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .module {
   position: relative;
   display: flex;
@@ -336,6 +340,35 @@ code {
   transform: translateX(3px);
 }
 
+/* 顶级只有一张卡时用横向布局，别让卡片空半屏 */
+.module--hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 32px;
+  align-items: center;
+  padding: 30px 32px;
+}
+
+.module__main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.module--hero .module__stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 22px;
+  padding: 4px 0 4px 30px;
+  border-top: none;
+  border-left: 1px dashed var(--border);
+}
+
+.module--hero .module__cta {
+  margin-top: 4px;
+}
+
+
 /* --------------------------------------------------------------------------
    内页
    -------------------------------------------------------------------------- */
@@ -393,6 +426,38 @@ code {
   font-size: 14px;
   line-height: 1.75;
   color: var(--text-soft);
+}
+
+/* Redis 二级看板的子导航 */
+.subnav {
+  display: inline-flex;
+  gap: 4px;
+  margin: 22px 0 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+.subnav__link {
+  padding: 7px 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-soft);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.subnav__link:hover {
+  color: var(--text);
+}
+
+.subnav__link--active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
 }
 
 .chip {
@@ -994,8 +1059,21 @@ tbody tr:hover {
     padding: 20px 16px 40px;
   }
 
-  .modules {
+  .modules,
+  .modules--single {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .module--hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    padding: 24px;
+  }
+
+  .module--hero .module__stats {
+    padding: 18px 0 0;
+    border-left: none;
+    border-top: 1px dashed var(--border);
   }
 
   .intro h1 {

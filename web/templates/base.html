@@ -17,9 +17,7 @@
 
       <nav class="nav">
         <a class="nav__link {{ 'nav__link--active' if request.path == '/' }}" href="/">总览</a>
-        <a class="nav__link {{ 'nav__link--active' if request.path == '/redis' }}" href="/redis">Key 管理</a>
-        <a class="nav__link {{ 'nav__link--active' if request.path == '/instance' }}" href="/instance">实例</a>
-        <a class="nav__link {{ 'nav__link--active' if request.path == '/commands' }}" href="/commands">命令</a>
+        <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/redis') }}" href="/redis">Redis</a>
       </nav>
 
       <span class="pill {{ 'pill--off' if not status.ok }}" title="{{ status.error }}">

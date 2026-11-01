@@ -265,14 +265,16 @@ python 03_end2end.py               # 端到端：查实例 → 连接 → 读写
 WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 ```
 
-四个页面：
+只有一个顶级看板，点进去是 Redis 的二级看板（内部三个子页，用子导航切换）：
 
-| 路径 | 内容 |
-| --- | --- |
-| `/` | 总览，三张卡片：Redis 状态、实例概览、命令速查 |
-| `/redis` | **Key 管理**：SCAN 搜索、点行看值、改值、设 TTL、删除 |
-| `/instance` | 实例信息（OpenAPI）与连接信息，只读 |
-| `/commands` | 16 个命令族、版本差异、限制清单 |
+| 路径 | 层级 | 内容 |
+| --- | --- | --- |
+| `/` | 顶级 | 只有一张 Redis 卡片，展示状态 / 版本 / Key 数 / 延迟 |
+| `/redis` | Redis 二级 | **键空间**：SCAN 搜索、点行看值、改值、设 TTL、删除 |
+| `/redis/instance` | Redis 二级 | 实例信息（OpenAPI）与连接信息，只读 |
+| `/redis/commands` | Redis 二级 | 16 个命令族、版本差异、限制清单 |
+
+> 早先的 `/instance`、`/commands` 会 301 跳到 `/redis/` 下对应的新路径。
 
 Key 管理页的几个细节：
 
