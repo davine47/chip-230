@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent  # 仓库根目录（.env 在这里）
 
 # 没配 AccessKey 时给出的提示，01/03/00 三个脚本共用
 MISSING_AK_HINT = """
@@ -56,7 +56,7 @@ def _load_dotenv() -> None:
         from dotenv import load_dotenv
     except ImportError:  # pragma: no cover
         return
-    env_file = PROJECT_DIR / ".env"
+    env_file = ROOT_DIR / ".env"
     if env_file.is_file():
         load_dotenv(env_file, override=False)
 

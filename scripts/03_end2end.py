@@ -17,15 +17,18 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
 
-import config
-from openapi_client import (
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让脚本能 import tair 包
+
+from tair import config
+from tair.console import line
+from tair.openapi import (
     describe_instance_attribute,
     describe_instances_overview,
     explain_error,
 )
-from redis_conn import build_client
-from ui import line
+from tair.redis_conn import build_client
 
 
 def pick_instance(instances: list[dict], wanted_id: str = "") -> dict:

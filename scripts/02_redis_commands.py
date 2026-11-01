@@ -27,10 +27,13 @@ import json
 import sys
 import time
 import uuid
+from pathlib import Path
 
-import config
-from redis_conn import build_client, server_summary
-from ui import line, section
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让脚本能 import tair 包
+
+from tair import config
+from tair.console import line, section
+from tair.redis_conn import build_client, server_summary
 
 # 大括号是 Redis Cluster 的 Hash Tag：同一 Slot 的 Key 才能做多 Key 操作
 # （SINTER / ZUNIONSTORE / 事务 在集群架构下要求所有 Key 同 Slot）。

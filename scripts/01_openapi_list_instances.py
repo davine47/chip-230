@@ -18,9 +18,12 @@ import argparse
 import json
 import sys
 from dataclasses import replace
+from pathlib import Path
 
-import config
-from openapi_client import describe_instances_overview, explain_error
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让脚本能 import tair 包
+
+from tair import config
+from tair.openapi import describe_instances_overview, explain_error
 
 
 def print_table(instances: list[dict]) -> None:

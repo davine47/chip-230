@@ -14,8 +14,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-import config
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让脚本能 import tair 包
+
+from tair import config
 
 OK = "  [✓]"
 NO = "  [x]"
@@ -42,7 +45,7 @@ def check_packages() -> bool:
 
 
 def check_openapi(settings: config.Settings) -> bool:
-    from openapi_client import describe_instances_overview, explain_error
+    from tair.openapi import describe_instances_overview, explain_error
 
     if not settings.has_access_key:
         print(f"{NO} 没有读到 AccessKey")
@@ -72,7 +75,7 @@ def check_redis(settings: config.Settings) -> bool:
         print(f"{SKIP} 未配置 REDIS_HOST，跳过数据面检查（只跑 OpenAPI 可以忽略）")
         return True
 
-    from redis_conn import build_client, server_summary
+    from tair.redis_conn import build_client, server_summary
 
     client = build_client(settings)
     try:

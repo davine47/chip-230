@@ -19,12 +19,15 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from pathlib import Path
 
 from alibabacloud_r_kvstore20150101 import models as kv_models
 from alibabacloud_tea_util import models as util_models
 
-import config
-from openapi_client import build_client, explain_error
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让脚本能 import tair 包
+
+from tair import config
+from tair.openapi import build_client, explain_error
 
 IP_ENDPOINTS = (
     "http://ipv4.icanhazip.com",
@@ -96,7 +99,7 @@ def main() -> int:
 
     instance_id = args.instance_id or settings.instance_id
     if not instance_id:
-        from openapi_client import describe_instances_overview
+        from tair.openapi import describe_instances_overview
 
         items = describe_instances_overview(settings).get("Instances") or []
         if not items:

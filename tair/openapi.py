@@ -18,7 +18,7 @@ from alibabacloud_r_kvstore20150101.client import Client
 from alibabacloud_tea_openapi import models as open_api_models
 from alibabacloud_tea_util import models as util_models
 
-from config import Settings
+from .config import Settings
 
 # 常见错误码 -> 人话解释（排查时先看 code）
 ERROR_TIPS = {

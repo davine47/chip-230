@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import redis
 
-from config import Settings
+from .config import Settings
 
 
 def build_client(

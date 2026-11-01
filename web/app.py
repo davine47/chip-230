@@ -25,9 +25,8 @@ from flask import Flask, jsonify, redirect, render_template, request
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parent))
 
-import config  # noqa: E402  （要在 sys.path 之后导入）
-import redis_conn  # noqa: E402
-from openapi_client import describe_instances_overview  # noqa: E402
+from tair import config, redis_conn  # noqa: E402  （要在 sys.path 之后导入）
+from tair.openapi import describe_instances_overview  # noqa: E402
 
 SETTINGS = config.load_settings()
 

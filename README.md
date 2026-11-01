@@ -200,15 +200,17 @@ for ins in response.body.instances:
 
 ```
 chip-230/
-├── config.py                     配置中心：AK 与实例连接信息（支持 .env / 环境变量）
-├── openapi_client.py             控制面封装：构造 SDK 客户端 + 两个查询接口
-├── redis_conn.py                 数据面封装：连接池、TLS、健康检查
-├── ui.py                         终端输出对齐小工具
-├── 00_doctor.py                  一键自检：依赖 / AK / OpenAPI / Redis 连通性
-├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
-├── 02_redis_commands.py          数据面实战：16 类命令族跑一遍（商品页场景）
-├── 03_end2end.py                 AK 查实例 → 拿地址 → 连上去读写，完整链路
-├── allow_my_ip.py                把本机出口 IP 加进白名单（IP 变了连不上时跑）
+├── tair/                         公共库（脚本和看板共用）
+│   ├── config.py                 配置中心：AK 与实例连接信息（.env / 环境变量）
+│   ├── openapi.py                控制面封装：SDK 客户端 + 查询接口 + 错误翻译
+│   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
+│   └── console.py                终端输出对齐小工具
+├── scripts/                      命令行示例
+│   ├── 00_doctor.py              一键自检：依赖 / AK / OpenAPI / Redis 连通性
+│   ├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
+│   ├── 02_redis_commands.py      数据面实战：16 类命令族跑一遍（商品页场景）
+│   ├── 03_end2end.py             AK 查实例 → 拿地址 → 连上去读写，完整链路
+│   └── allow_my_ip.py            把本机出口 IP 加进白名单（IP 变了连不上时跑）
 ├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
@@ -229,14 +231,14 @@ cp .env.template .env
 #   编辑 .env：ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET
 
 # 3. 自检 + 跑起来
-python 00_doctor.py                # 全绿就可以继续
-python 01_openapi_list_instances.py          # 控制面：看实例列表
-python 01_openapi_list_instances.py --raw    # 打印文档里那种完整 JSON
+python scripts/00_doctor.py                # 全绿就可以继续
+python scripts/01_openapi_list_instances.py          # 控制面：看实例列表
+python scripts/01_openapi_list_instances.py --raw    # 打印文档里那种完整 JSON
 
 # 4. 想验证数据面：把实例地址和密码也填进 .env
 #    REDIS_HOST=...  REDIS_PASSWORD=...
-python 02_redis_commands.py        # 跑一遍常用命令（--keep 保留数据）
-python 03_end2end.py               # 端到端：查实例 → 连接 → 读写验证
+python scripts/02_redis_commands.py        # 跑一遍常用命令（--keep 保留数据）
+python scripts/03_end2end.py               # 端到端：查实例 → 连接 → 读写验证
 ```
 
 ### 02 脚本的输出长这样
@@ -299,7 +301,7 @@ Key 管理页的几个细节：
 | `InvalidRegionId.NotFound` | 地域写错 | 例如 `cn-hangzhou`、`cn-beijing` |
 | `NOAUTH Authentication required` | 没传密码 | 填 `REDIS_PASSWORD` |
 | `WRONGPASS` | 密码/用户名错 | 自定义账号要同时填 `REDIS_USERNAME` |
-| `Connection refused` / `timed out` | 白名单没放行 / 用了内网地址 / 安全组 | 加白名单；本机改用公网地址；**出口 IP 变了就跑 `python allow_my_ip.py`** |
+| `Connection refused` / `timed out` | 白名单没放行 / 用了内网地址 / 安全组 | 加白名单；本机改用公网地址；**出口 IP 变了就跑 `python scripts/allow_my_ip.py`** |
 | `CROSSSLOT Keys in request don't hash to the same slot` | 集群架构跨 Slot 多 Key 操作 | 给 Key 加相同 Hash Tag |
 | `MOVED` / `ASK` 重定向 | 用单机客户端连了集群直连地址 | 换 Proxy 地址，或用 `RedisCluster` 客户端 |
 | `ERR unknown command` | 版本不支持该命令 | 对照命令支持表，或升级大版本 |
@@ -326,8 +328,8 @@ Key 管理页的几个细节：
 看板一直转圈。一条命令修好：
 
 ```bash
-python allow_my_ip.py          # 自动探测当前出口 IP 并追加进白名单
-python allow_my_ip.py --show   # 只看当前白名单
+python scripts/allow_my_ip.py          # 自动探测当前出口 IP 并追加进白名单
+python scripts/allow_my_ip.py --show   # 只看当前白名单
 ```
 
 需要 AccessKey 具备改白名单的权限（`AliyunKvstoreFullAccess` 或自定义策略）。
