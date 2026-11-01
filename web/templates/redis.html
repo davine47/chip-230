@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · Redis Key 管理{% endblock %}
+
+{% block content %}
+<main class="board" style="--accent: #4f6ef7">
+  <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
+
+  <div class="board__head">
+    <span class="board__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <ellipse cx="12" cy="5.5" rx="7.5" ry="3"/>
+        <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+        <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+      </svg>
+    </span>
+    <div>
+      <span class="chip chip--mono">{{ status.host }}:{{ status.port }}</span>
+      <h1>Redis Key 管理</h1>
+      <p class="board__desc">
+        按模式搜索 Key，点任意一行查看和修改，右侧抽屉里可以改值、设 TTL、删除。
+        写操作直接发到实例，没有中间缓存。
+      </p>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>键空间</h2>
+      <span class="hint">SCAN 遍历，最多返回 <span id="limitHint">200</span> 个</span>
+    </div>
+
+    <div class="toolbar">
+      <label class="field field--grow">
+        <span>匹配模式</span>
+        <input id="pattern" type="text" value="*" placeholder="* 或 {tair:demo}:*" autocomplete="off" spellcheck="false" />
+      </label>
+      <button class="btn btn--ghost" id="refresh" type="button">刷新</button>
+      <button class="btn btn--primary" id="create" type="button">＋ 新建 Key</button>
+    </div>
+
+    <div class="panel panel--flush">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-key">Key</th>
+              <th class="col-type">类型</th>
+              <th class="col-ttl">TTL</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="empty" hidden>
+        <span class="empty__mark">∅</span>
+        <span id="emptyText">没有匹配的 Key</span>
+      </p>
+    </div>
+
+    <p class="hint" id="summary">正在加载…</p>
+  </section>
+</main>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer__mask" data-close></div>
+  <aside class="drawer__body" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+    <header class="drawer__head">
+      <h2 id="editorTitle">编辑 Key</h2>
+      <button class="iconbtn" type="button" data-close aria-label="关闭">×</button>
+    </header>
+
+    <div class="drawer__content">
+      <label class="field">
+        <span>Key</span>
+        <input id="fKey" type="text" autocomplete="off" spellcheck="false" placeholder="例如 {tair:demo}:user:1001" />
+      </label>
+
+      <div class="row">
+        <label class="field field--fixed">
+          <span>类型</span>
+          <span class="field__static" id="fType">string</span>
+        </label>
+        <label class="field">
+          <span>TTL（秒，留空 = 永不过期）</span>
+          <input id="fTtl" type="number" min="0" step="1" placeholder="例如 3600" />
+        </label>
+      </div>
+
+      <div class="field field--grow">
+        <span>Value</span>
+        <textarea id="fValue" rows="12" spellcheck="false" placeholder="这里填字符串值"></textarea>
+        <p class="hint" id="fHint"></p>
+      </div>
+    </div>
+
+    <footer class="drawer__foot">
+      <button class="btn btn--danger" id="deleteBtn" type="button" hidden>删除</button>
+      <span class="spacer"></span>
+      <button class="btn btn--ghost" type="button" data-close>取消</button>
+      <button class="btn btn--primary" id="saveBtn" type="button">保存</button>
+    </footer>
+  </aside>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
+{% endblock %}

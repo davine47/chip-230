@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · 命令支持范围{% endblock %}
+
+{% block content %}
+<main class="board" style="--accent: #f59e0b">
+  <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
+
+  <div class="board__head">
+    <span class="board__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="3" y="4.5" width="18" height="15" rx="2.5"/>
+        <path d="M7 10l2.5 2.5L7 15M12.5 15H17"/>
+      </svg>
+    </span>
+    <div>
+      <span class="chip chip--mono">命令支持范围与使用限制</span>
+      <h1>命令速查</h1>
+      <p class="board__desc">
+        16 个命令族的代表命令，以及各版本新增能力和明确的限制。
+        写代码前先对一眼，比线上报 <code>ERR unknown command</code> 再回来查要省事。
+      </p>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>命令族</h2>
+      <span class="hint">起始版本按最常用的命令标注</span>
+    </div>
+    <div class="panel panel--flush">
+      <div class="table-wrap table-wrap--tall">
+        <table>
+          <thead>
+            <tr><th>命令族</th><th>代表命令</th><th>起始版本</th><th>典型用途</th></tr>
+          </thead>
+          <tbody>
+            {% for family, commands, since, usage in groups %}
+            <tr>
+              <td><strong>{{ family }}</strong></td>
+              <td class="mono">{{ commands }}</td>
+              <td><span class="tag">{{ since }}</span></td>
+              <td class="muted">{{ usage }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>版本差异</h2>
+      <span class="hint">照着实例版本选命令</span>
+    </div>
+    <div class="panel">
+      <dl class="stats stats--wide">
+        {% for version, added, note in versions %}
+        <div>
+          <dt>Redis {{ version }}</dt>
+          <dd class="mono">{{ added }}</dd>
+          <dd class="muted">{{ note }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>明确的限制</h2>
+      <span class="hint">官方表里标 ❌ 或特殊说明的部分</span>
+    </div>
+    <div class="panel panel--flush">
+      <ul class="limits">
+        {% for name, detail in limits %}
+        <li><span class="tag tag--warn">{{ name }}</span><span>{{ detail }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+</main>
+{% endblock %}

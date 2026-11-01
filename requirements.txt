@@ -10,3 +10,6 @@ alibabacloud_tea_util>=0.3
 
 # 读取 .env（可选，不装也能用系统环境变量）
 python-dotenv>=1.0
+
+# 看板：Flask（web/ 目录，可选，只跑脚本不需要）
+flask>=3.0

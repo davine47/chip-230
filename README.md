@@ -208,6 +208,7 @@ chip-230/
 ├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
 ├── 02_redis_commands.py          数据面实战：16 类命令族跑一遍（商品页场景）
 ├── 03_end2end.py                 AK 查实例 → 拿地址 → 连上去读写，完整链路
+├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -254,6 +255,34 @@ python 03_end2end.py               # 端到端：查实例 → 连接 → 读写
 
 > 注意：**02 不需要 AccessKey**。数据面只认「地址 + 端口 + 密码 + 白名单」，
 > AccessKey 只用于控制面（01 / 03）。所以你可以先把 02 在本地/ECS 上跑通，再配 AK。
+
+### Web 看板（可选）
+
+`web/` 下是一个 Flask 看板，视觉风格对齐 `~/gugugaga`：浅色渐变底、白色圆角卡片、顶部彩色渐变条。
+
+```bash
+./.venv/bin/python web/app.py                 # http://127.0.0.1:8080
+WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
+```
+
+四个页面：
+
+| 路径 | 内容 |
+| --- | --- |
+| `/` | 总览，三张卡片：Redis 状态、实例概览、命令速查 |
+| `/redis` | **Key 管理**：SCAN 搜索、点行看值、改值、设 TTL、删除 |
+| `/instance` | 实例信息（OpenAPI）与连接信息，只读 |
+| `/commands` | 16 个命令族、版本差异、限制清单 |
+
+Key 管理页的几个细节：
+
+- 列表用 `SCAN` + `pipeline` 批量取 `TYPE`/`TTL`，不用 `KEYS`
+- String 可直接编辑；Hash/List/Set/ZSet 只读预览，避免误覆盖结构
+- 超过 10 万字符的值用 `GETRANGE` 截断读取，不会把大 value 拉进内存
+- 支持深链：`/redis?key=davine` 直接打开编辑抽屉，`/redis?pattern={tair:demo}:*` 预填搜索
+
+> ⚠️ 这个服务能直接改线上实例的数据，默认只监听 `127.0.0.1`。
+> 不要把 `WEB_HOST` 改成 `0.0.0.0` 暴露出去；给同事用得先加一层认证。
 
 ---
 

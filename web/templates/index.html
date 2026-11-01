@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · 总览{% endblock %}
+
+{% block content %}
+<section class="intro">
+  <p class="eyebrow">CHIP-230 BOARD</p>
+  <h1>一台 Redis，一块看板</h1>
+  <p class="lede">
+    连的是阿里云 Tair（兼容 Redis）实例，当前
+    {% if status.ok %}连接正常{% else %}连不上（{{ status.error }}）{% endif %}，
+    库里 <strong>{{ status.dbsize if status.dbsize is not none else '—' }}</strong> 个 Key。
+    点进「Redis」卡片可以直接做 Key 的增删改查，写操作会立刻落到实例。
+  </p>
+</section>
+
+<main class="modules">
+  <a class="module" style="--accent: #4f6ef7" href="/redis">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <ellipse cx="12" cy="5.5" rx="7.5" ry="3"/>
+        <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+        <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+      </svg>
+    </span>
+    <h2>Redis <span class="module__name">Key 管理</span></h2>
+    <p class="module__desc">
+      搜索 Key、看值、改值、设过期时间、删除。支持 String 编辑，其它类型只读预览。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>状态</dt><dd>{{ '在线' if status.ok else '离线' }}</dd></div>
+      <div class="module__stat"><dt>Key 数</dt><dd>{{ status.dbsize if status.dbsize is not none else '—' }}</dd></div>
+      <div class="module__stat"><dt>延迟</dt><dd>{{ status.latency_ms ~ ' ms' if status.latency_ms is not none else '—' }}</dd></div>
+    </dl>
+    <span class="module__cta">进入看板 <span aria-hidden="true">→</span></span>
+  </a>
+
+  <a class="module" style="--accent: #0ea5a4" href="/instance">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="3.5" y="4" width="17" height="6" rx="2"/>
+        <rect x="3.5" y="14" width="17" height="6" rx="2"/>
+        <path d="M7 7h.01M7 17h.01"/>
+      </svg>
+    </span>
+    <h2>{{ instance.id or '实例' }} <span class="module__name">实例概览</span></h2>
+    <p class="module__desc">
+      OpenAPI 查到的实例信息：规格、状态、地域与连接地址，只读展示。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>规格</dt><dd>{{ instance.capacity }} MB</dd></div>
+      <div class="module__stat"><dt>地域</dt><dd>{{ instance.region }}</dd></div>
+      <div class="module__stat"><dt>可用区</dt><dd>{{ instance.zone or '—' }}</dd></div>
+    </dl>
+    <span class="module__cta">查看详情 <span aria-hidden="true">→</span></span>
+  </a>
+
+  <a class="module" style="--accent: #f59e0b" href="/commands">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="3" y="4.5" width="18" height="15" rx="2.5"/>
+        <path d="M7 10l2.5 2.5L7 15M12.5 15H17"/>
+      </svg>
+    </span>
+    <h2>命令 <span class="module__name">支持范围</span></h2>
+    <p class="module__desc">
+      16 个命令族在 2.8 / 4.0 / 5.0 / 6.0 / 7.0 各版本的可用性，以及明确的限制清单。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>命令族</dt><dd>16</dd></div>
+      <div class="module__stat"><dt>版本</dt><dd>5.0 – 7.0</dd></div>
+      <div class="module__stat"><dt>限制</dt><dd>6 条</dd></div>
+    </dl>
+    <span class="module__cta">查看命令 <span aria-hidden="true">→</span></span>
+  </a>
+</main>
+{% endblock %}

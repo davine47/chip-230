@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · 实例概览{% endblock %}
+
+{% block content %}
+<main class="board" style="--accent: #0ea5a4">
+  <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
+
+  <div class="board__head">
+    <span class="board__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="3.5" y="4" width="17" height="6" rx="2"/>
+        <rect x="3.5" y="14" width="17" height="6" rx="2"/>
+        <path d="M7 7h.01M7 17h.01"/>
+      </svg>
+    </span>
+    <div>
+      <span class="chip chip--mono">DescribeInstancesOverview</span>
+      <h1>实例概览</h1>
+      <p class="board__desc">
+        控制面的只读视图：这里的数据来自阿里云 OpenAPI（访问密钥签名），
+        和数据面 redis-py 连的是同一个实例。
+      </p>
+    </div>
+  </div>
+
+  {% if not instance.ok %}
+    <div class="panel panel--notice">
+      <h2>没取到实例信息</h2>
+      <p class="hint">{{ instance.error or '未知错误' }}</p>
+      <p class="hint">
+        检查 <code>.env</code> 里的 AccessKey、地域，以及 RAM 是否附加了
+        <code>AliyunKvstoreReadOnlyAccess</code>。
+      </p>
+    </div>
+  {% else %}
+    <section class="section">
+      <div class="section__head">
+        <h2>实例信息</h2>
+        <span class="hint">缓存 5 分钟，避免每次刷新都打接口</span>
+      </div>
+      <div class="panel">
+        <dl class="stats">
+          <div><dt>实例 ID</dt><dd class="mono">{{ instance.id }}</dd></div>
+          <div><dt>名称</dt><dd>{{ instance.name or '(未命名)' }}</dd></div>
+          <div><dt>状态</dt><dd>
+            <span class="tag {{ 'tag--ok' if instance.status == 'Normal' }}">{{ instance.status }}</span>
+          </dd></div>
+          <div><dt>引擎版本</dt><dd>Redis {{ instance.engine }}</dd></div>
+          <div><dt>规格</dt><dd class="mono">{{ instance.class }}</dd></div>
+          <div><dt>容量</dt><dd>{{ instance.capacity }} MB</dd></div>
+          <div><dt>地域</dt><dd>{{ instance.region }}</dd></div>
+          <div><dt>可用区</dt><dd>{{ instance.zone or '—' }}</dd></div>
+          <div><dt>计费方式</dt><dd>{{ instance.charge }}</dd></div>
+          <div><dt>创建时间</dt><dd>{{ instance.created }}</dd></div>
+        </dl>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <div class="section__head">
+      <h2>连接信息</h2>
+      <span class="hint">来自本地 <code>.env</code>，密码不回显</span>
+    </div>
+    <div class="panel">
+      <dl class="stats">
+        <div class="stats__wide"><dt>连接地址</dt><dd class="mono">{{ status.host }}:{{ status.port }}</dd></div>
+        <div><dt>连接状态</dt><dd>
+          <span class="tag {{ 'tag--ok' if status.ok }}">{{ '在线' if status.ok else '离线' }}</span>
+        </dd></div>
+        <div><dt>PING 延迟</dt><dd>{{ status.latency_ms ~ ' ms' if status.latency_ms is not none else '—' }}</dd></div>
+        <div><dt>Redis 版本</dt><dd>{{ status.version }}</dd></div>
+        <div><dt>Key 数量</dt><dd>{{ status.dbsize if status.dbsize is not none else '—' }}</dd></div>
+        <div class="stats__wide"><dt>内网地址</dt><dd class="mono">{{ instance.address or '—' }}</dd></div>
+      </dl>
+    </div>
+  </section>
+</main>
+{% endblock %}
