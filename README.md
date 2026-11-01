@@ -212,6 +212,7 @@ chip-230/
 │   ├── 03_end2end.py             AK 查实例 → 拿地址 → 连上去读写，完整链路
 │   └── allow_my_ip.py            把本机出口 IP 加进白名单（IP 变了连不上时跑）
 ├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
+├── docs/ip-whitelist.md          白名单配置完整步骤（换机器 / IP 变了看这份）
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -237,6 +238,7 @@ python scripts/01_openapi_list_instances.py --raw    # 打印文档里那种完�
 
 # 4. 想验证数据面：把实例地址和密码也填进 .env
 #    REDIS_HOST=...  REDIS_PASSWORD=...
+#    连不上先看 docs/ip-whitelist.md（九成是白名单没放行）
 python scripts/02_redis_commands.py        # 跑一遍常用命令（--keep 保留数据）
 python scripts/03_end2end.py               # 端到端：查实例 → 连接 → 读写验证
 ```
@@ -322,7 +324,7 @@ Key 管理页的几个细节：
 
 [Apache License 2.0](LICENSE)
 
-## 七、出口 IP 变了怎么办
+## 七、白名单（换机器 / IP 变了看这份）
 
 家宽/办公网的公网出口 IP 会变，一变就会被实例白名单挡住，表现为 `Timeout connecting to server`、
 看板一直转圈。一条命令修好：
@@ -332,5 +334,8 @@ python scripts/allow_my_ip.py          # 自动探测当前出口 IP 并追加�
 python scripts/allow_my_ip.py --show   # 只看当前白名单
 ```
 
-需要 AccessKey 具备改白名单的权限（`AliyunKvstoreFullAccess` 或自定义策略）。
-删掉旧 IP 用 `ModifySecurityIps` 的 `Delete` 模式即可。
+需要 AccessKey 具备改白名单的权限（`AliyunKvstoreFullAccess`，或只给
+`kvstore:ModifySecurityIps` 的最小策略）。
+
+完整的步骤——控制台怎么点、API 怎么调、规则怎么写、换机器时的检查清单、排查表——
+都整理在 **[docs/ip-whitelist.md](docs/ip-whitelist.md)**，可以脱离本仓库单独照着做。
