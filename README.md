@@ -1,0 +1,289 @@
+# 阿里云 Tair（兼容 Redis）使用方法 + 可运行示例
+
+> 参照两篇官方文档整理：
+> 1. [命令支持范围与使用限制](https://help.aliyun.com/zh/redis/developer-reference/commands-supported-by-apsaradb-for-redis-community-edition) —— **数据面**：连上实例后能发哪些命令
+> 2. [Python SDK 集成示例](https://help.aliyun.com/zh/redis/developer-reference/call-the-apsaradb-for-redis-api-by-using-alibaba-cloud-sdk-for-python) —— **控制面**：用 AccessKey 调 OpenAPI 管实例
+
+这两篇讲的其实是同一套东西的两个层面，实际项目里要配合使用：
+
+```
+   你的代码 / 运维脚本
+        │
+        ├── 控制面：HTTPS + AccessKey 签名  → OpenAPI（查实例、改白名单、变配…）
+        │      产物：实例 ID、连接地址、端口、密码、白名单
+        │
+        └── 数据面：Redis 协议（RESP）      → 实例的 6379 端口（GET/SET/HSET…）
+               前提：地址 + 端口 + 密码 + 白名单都对了
+```
+
+---
+
+## 一、Redis 使用方法总结
+
+### 1.1 数据面：连上实例的四要素
+
+| 要素 | 从哪来 | 注意点 |
+|---|---|---|
+| 连接地址 | 控制台「连接信息」/ `DescribeInstanceAttribute` 的 `ConnectionDomain` | 默认是 **VPC 内网地址**，只有同 VPC 的 ECS 能连；本机调试要先申请**公网连接地址** |
+| 端口 | 同上，`Port` | 默认 6379 |
+| 密码 | 创建实例时设置，或 `DescribeAccounts` | 6.0 起支持自定义账号，需要「用户名 + 密码」两个都填 |
+| 白名单 | 控制台「白名单设置」 | 默认只放行 `127.0.0.1`，不加你的出口 IP 一定连不上 |
+
+客户端用官方的 **redis-py** 就行，阿里云只提供标准 Redis 协议，不需要专用 SDK：
+
+```bash
+pip install redis
+```
+
+```python
+import redis
+
+r = redis.Redis(
+    host="r-xxxx.redis.rds.aliyuncs.com",
+    port=6379,
+    password="<实例密码>",
+    decode_responses=True,      # 返回 str 而不是 bytes
+    socket_timeout=5,
+    health_check_interval=30,   # 复用空闲连接前先 PING，避免拿到已被服务端断开的连接
+)
+r.set("k", "v", ex=60)          # 带过期时间一起写，别 SET 完再 EXPIRE
+print(r.get("k"), r.ttl("k"))
+```
+
+> 连接池：`redis.Redis` 内部自带连接池，**一个进程创建一个实例复用即可**，不要每次请求都 new。
+
+### 1.2 命令族：全部支持的 16 类
+
+官方命令表按命令族拆分，含义都是「该命令在 2.8 / 4.0 / 5.0 / 6.0 / 7.0 各版本是否支持」：
+
+| 命令族 | 代表命令 | 典型用途 |
+|---|---|---|
+| String | `SET/GET/INCR/INCRBY/MSET/MGET/SETNX` | 缓存、计数器、分布式锁 |
+| Hash | `HSET/HGET/HGETALL/HINCRBY/HDEL` | 对象字段局部读写 |
+| List | `LPUSH/RPUSH/LRANGE/LTRIM/LPOP` | 队列、最新 N 条 |
+| Set | `SADD/SMEMBERS/SINTER/SINTERSTORE/SCARD` | 标签、去重、交集 |
+| Sorted Set | `ZADD/ZINCRBY/ZREVRANGE/ZRANK/ZCOUNT` | 排行榜、延迟队列 |
+| Bitmap | `SETBIT/GETBIT/BITCOUNT/BITOP/BITFIELD` | 签到、布尔标记 |
+| HyperLogLog | `PFADD/PFCOUNT/PFMERGE` | UV 去重计数（固定约 12KB） |
+| Geospatial | `GEOADD/GEODIST/GEOSEARCH` | 附近的人 / 距离计算 |
+| Stream | `XADD/XREAD/XGROUP/XACK/XLEN` | 消息队列（5.0+） |
+| Pub/Sub | `PUBLISH/SUBSCRIBE/PSUBSCRIBE` | 广播通知（不持久化） |
+| Transactions | `MULTI/EXEC/DISCARD/WATCH` | 事务 |
+| Scripting | `EVAL/EVALSHA/FCALL` | Lua 原子逻辑 |
+| Connection | `AUTH/PING/CLIENT SETNAME/CLIENT LIST` | 连接管理 |
+| Generic | `DEL/EXISTS/EXPIRE/TTL/SCAN/TYPE` | Key 通用操作 |
+| Server | `INFO/CONFIG GET/DBSIZE/FLUSHDB` | 运维（部分受限） |
+| Cluster | `CLUSTER INFO/NODES/SLOTS/KEYSLOT` | 集群信息（集群架构才用） |
+
+### 1.3 版本差异：照着表选版本，别照着本地 Redis 写代码
+
+- **5.0** 起：`Stream`（XADD/XREAD…）、`ZPOPMIN/ZPOPMAX`、`BZPOPMIN`
+- **6.0** 起：`BITFIELD_RO`、`CLIENT CACHING`、`CLIENT TRACKING`、`CLIENT GETREDIR`、`LPOS`
+- **7.0** 起：`GETDEL`、`GETEX`、`LCS`、`COPY`、`SINTERCARD`、`SMISMEMBER`、`GEOSEARCH`、`BZMPOP`、`XAUTOCLAIM`、`FUNCTION LOAD/FCALL`、`EVAL_RO`
+
+如果你的实例是 5.0 或 6.0，用了 7.0 才有的命令会直接报 `ERR unknown command`。写代码前先在表里查一眼。
+
+### 1.4 架构差异：这是最容易踩坑的地方
+
+| | 标准架构（主从） | 集群架构（Proxy 地址） | 集群架构（直连地址） | 读写分离 |
+|---|---|---|---|---|
+| 多 Key 命令（`SINTER`/`ZUNIONSTORE`/事务） | 随便用 | **要求同一个 Slot**（或走 Proxy 支持的少量跨 Slot 命令，如 `DEL`/`EXISTS`） | 严格要求同一 Slot | 同 Proxy |
+| `SELECT` | 支持 | 支持（Proxy 屏蔽细节） | 支持，但部分客户端在集群初始化模式下不支持 | 支持 |
+| Cluster 系列命令 | ❌ 不适用 | 仅 `CLUSTER INFO/KEYSLOT/NODES/SLAVES/SLOTS` | 部分命令可用 | 同 Proxy |
+| `SCAN` | 全库遍历 | 从首个分片开始按序扫全部分片（只想扫某个分片用 `ISCAN`） | 只扫当前节点 | 同 Proxy |
+| 事务 | 完整语义 | 同一个 Slot 内才有事务语义 | 严格同 Slot | 同 Proxy |
+
+**Hash Tag**：要想让一批 Key 落在同一个 Slot，用 `{}` 包一个相同的前缀：
+
+```
+{tair:demo}:tag:keyboard
+{tair:demo}:tag:gaming      ← 和上面同一个 Slot，SINTER 才能跑
+```
+
+本项目的所有演示 Key 都用 `{tair:demo}` 前缀，所以标准/集群/读写分离架构都能直接跑。
+
+### 1.5 明确的限制（官方表里标 ❌ 或特殊说明的）
+
+- `MIGRATE`：所有版本都不支持
+- `CONFIG SET`：**只返回 `OK`，不会真正改参数**（为了兼容某些客户端框架）。要改参数用控制台或 `ModifyInstanceConfig`
+- `ACL` 系列：绝大多数不支持（`ACL WHOAMI` 仅 7.0 支持）
+- 部分命令需要**开通直连访问**并用直连地址连接（表里带 ① 的命令，例如 `CLUSTER INFO`）
+- `SWAPDB`：仅兼容 Redis 7.0 的集群架构实例支持
+- 集群架构只有 **db 0**：`SELECT` 命令虽然被接受，但切不了库，业务里别依赖「多 db 隔离」
+
+### 1.6 生产使用建议（经验性，非文档原文）
+
+1. **一定设 TTL**：缓存类 Key 不带过期时间，迟早把内存打满
+2. **`SCAN` 代替 `KEYS`**：`KEYS` 是 O(N) 且阻塞实例
+3. **Pipeline 批量**：一次网络往返发多条命令，脚本里见 `demo_pipeline`
+4. **分布式锁用 `SET key val NX EX ttl`**，释放用 Lua 校验 token（防止误删别人的锁）
+5. **控制单 Key 大小**：大 Key（几 MB 的 Hash/List）会拖慢整个实例
+6. **不用 `FLUSHALL`/`FLUSHDB` 做测试清理**，用 `SCAN` + `DEL` 按前缀删
+7. **查看慢查询**：控制台慢日志，或 `DescribeSlowLogRecords` 接口
+
+---
+
+## 二、控制面：Python SDK 调 OpenAPI
+
+### 2.1 准备身份与权限（一次性）
+
+1. RAM 控制台创建子账号，访问方式选「使用永久 AccessKey」
+2. 给它附加 **`AliyunKvstoreReadOnlyAccess`**（只读，够本文演示）；要改配置则用 `AliyunKvstoreFullAccess`
+3. 保存 AccessKey ID / Secret —— **只显示一次**
+
+> 千万别用主账号 AK，泄露等于整个账号被接管。
+
+### 2.2 装包 + 配 AK
+
+```bash
+pip install alibabacloud_credentials alibabacloud_r_kvstore20150101 alibabacloud_tea_console
+
+export ALIBABA_CLOUD_ACCESS_KEY_ID=<access_key_id>
+export ALIBABA_CLOUD_ACCESS_KEY_SECRET=<access_key_secret>
+```
+
+### 2.3 调用套路：永远是这四步
+
+```python
+from alibabacloud_tea_openapi import models as open_api_models
+from alibabacloud_tea_util import models as util_models
+from alibabacloud_r_kvstore20150101.client import Client
+from alibabacloud_r_kvstore20150101 import models as kv_models
+
+# ① 配置（AK + 地域）
+config = open_api_models.Config(
+    access_key_id=settings.access_key_id,
+    access_key_secret=settings.access_key_secret,
+    region_id="cn-hangzhou",
+)
+
+# ② 客户端
+client = Client(config)
+
+# ③ 请求对象（业务参数都在这里）
+request = kv_models.DescribeInstancesOverviewRequest(region_id="cn-hangzhou")
+
+# ④ 发起调用 + 取 body
+response = client.describe_instances_overview_with_options(request, util_models.RuntimeOptions())
+print(response.status_code, response.body.total_count)
+for ins in response.body.instances:
+    print(ins.instance_id, ins.instance_status, ins.connection_domain)
+```
+
+**两个官方文档里没写、但一定会踩的坑：**
+
+1. **endpoint 不用手写**。SDK 会按 `RegionId` 自动解析（`cn-hangzhou` → `r-kvstore.aliyuncs.com`）。
+   手动写 `r-kvstore.cn-hangzhou.aliyuncs.com` 这种地域化域名反而**解析不到**（本机实测 DNS 失败）。
+   只有走代理/专线时才用 `config.endpoint` 覆盖。
+2. **返回字段是 snake_case**（`body.instances[0].connection_domain`），不是文档 JSON 里的 `ConnectionDomain`。
+   想拿文档里那种 PascalCase 结构，调用 `.to_map()`。
+
+### 2.4 常用接口速查
+
+| 场景 | 接口 | 权限 |
+|---|---|---|
+| 查实例列表（本文示例） | `DescribeInstancesOverview` | 只读 |
+| 分页查实例（实例多时用） | `DescribeInstances`（`PageNumber`/`PageSize`） | 只读 |
+| 查单个实例详情 / 连接地址 | `DescribeInstanceAttribute` | 只读 |
+| 查网络地址（内网/公网/直连） | `DescribeDBInstanceNetInfo` | 只读 |
+| 查 / 改白名单 | `DescribeSecurityIps` / `ModifySecurityIps` | 只读 / 读写 |
+| 申请公网地址 | `AllocateInstancePublicConnection` | 读写 |
+| 查账号 / 改密码 | `DescribeAccounts` / `ModifyAccountPassword` | 只读 / 读写 |
+| 监控、慢日志 | `DescribeHistoryMonitorValues`、`DescribeSlowLogRecords` | 只读 |
+| 创建、重启、变配 | `CreateInstance`、`RestartInstance`、`ModifyInstanceSpec` | 读写 |
+
+---
+
+## 三、示例项目
+
+### 目录结构
+
+```
+chip-230/
+├── config.py                     配置中心：AK 与实例连接信息（支持 .env / 环境变量）
+├── openapi_client.py             控制面封装：构造 SDK 客户端 + 两个查询接口
+├── redis_conn.py                 数据面封装：连接池、TLS、健康检查
+├── ui.py                         终端输出对齐小工具
+├── 00_doctor.py                  一键自检：依赖 / AK / OpenAPI / Redis 连通性
+├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
+├── 02_redis_commands.py          数据面实战：16 类命令族跑一遍（商品页场景）
+├── 03_end2end.py                 AK 查实例 → 拿地址 → 连上去读写，完整链路
+├── requirements.txt              运行依赖
+├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
+├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
+├── .gitignore                    .env 已被忽略，不会误提交
+└── LICENSE                       Apache License 2.0
+```
+
+### 快速开始
+
+```bash
+# 1. 装依赖（建议虚拟环境）
+python3 -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. 填 AccessKey（你之后要配的就是这一步，只影响 OpenAPI）
+cp .env.template .env
+#   编辑 .env：ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET
+
+# 3. 自检 + 跑起来
+python 00_doctor.py                # 全绿就可以继续
+python 01_openapi_list_instances.py          # 控制面：看实例列表
+python 01_openapi_list_instances.py --raw    # 打印文档里那种完整 JSON
+
+# 4. 想验证数据面：把实例地址和密码也填进 .env
+#    REDIS_HOST=...  REDIS_PASSWORD=...
+python 02_redis_commands.py        # 跑一遍常用命令（--keep 保留数据）
+python 03_end2end.py               # 端到端：查实例 → 连接 → 读写验证
+```
+
+### 02 脚本的输出长这样
+
+```
+====================================================================
+ 5. ZSet —— 销量排行榜（有序集合）
+====================================================================
+    ZINCRBY 累加销量                        3
+    ZREVRANGE 0 2 WITHSCORES（Top3）        [('1002', 5.0), ('1001', 3.0), ('1003', 1.0)]
+    ZSCORE 1002                             5.0
+    ZREVRANK 1002（从 0 开始的排名）        0
+    ZCOUNT 3 ~ +inf                         2
+```
+
+每个函数对应一个命令族，函数名就是 `demo_<命令族>`，想单独试某条命令直接改参数跑即可。
+
+> 注意：**02 不需要 AccessKey**。数据面只认「地址 + 端口 + 密码 + 白名单」，
+> AccessKey 只用于控制面（01 / 03）。所以你可以先把 02 在本地/ECS 上跑通，再配 AK。
+
+---
+
+## 四、常见报错对照表
+
+| 报错 | 原因 | 处理 |
+|---|---|---|
+| `InvalidAccessKeyId.NotFound` | AK ID 错、有空格、或不是这个账号的 | 重新复制；确认没用主账号/子账号混了 |
+| `SignatureDoesNotMatch` | AK Secret 错 | 重新生成 Secret |
+| `Forbidden.RAM` / `NoPermission` | RAM 没授权 | 附加 `AliyunKvstoreReadOnlyAccess` |
+| `InvalidRegionId.NotFound` | 地域写错 | 例如 `cn-hangzhou`、`cn-beijing` |
+| `NOAUTH Authentication required` | 没传密码 | 填 `REDIS_PASSWORD` |
+| `WRONGPASS` | 密码/用户名错 | 自定义账号要同时填 `REDIS_USERNAME` |
+| `Connection refused` / `timed out` | 白名单没放行 / 用了内网地址 / 安全组 | 加白名单；本机改用公网地址 |
+| `CROSSSLOT Keys in request don't hash to the same slot` | 集群架构跨 Slot 多 Key 操作 | 给 Key 加相同 Hash Tag |
+| `MOVED` / `ASK` 重定向 | 用单机客户端连了集群直连地址 | 换 Proxy 地址，或用 `RedisCluster` 客户端 |
+| `ERR unknown command` | 版本不支持该命令 | 对照命令支持表，或升级大版本 |
+
+---
+
+## 五、安全提醒
+
+- `.env` 已在 `.gitignore` 里，**不要把 AK 写进代码或提交到 Git**
+- 用 RAM 子账号 + 最小权限策略，不要用主账号 AK
+- 打印日志时脱敏（本项目 `Settings.masked_ak()` 就是这么做的）
+- AK 定期轮换；云上 ECS 场景优先用**实例 RAM 角色**（免 AK）
+- 生产环境建议开启 **TLS 加密连接**（`REDIS_SSL=true`）并配置 CA 校验
+
+---
+
+## 六、License
+
+[Apache License 2.0](LICENSE)
