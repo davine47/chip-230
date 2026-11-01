@@ -16,6 +16,8 @@ def build_client(
     host: str | None = None,
     port: int | None = None,
     use_ssl: bool | None = None,
+    connect_timeout: float = 5,
+    socket_timeout: float = 5,
 ) -> redis.Redis:
     """建一个带连接池的客户端（连接池会自动复用 TCP 连接，别每次 new 一个）。"""
     kwargs: dict[str, object] = {
@@ -23,8 +25,8 @@ def build_client(
         "port": int(port or settings.redis_port),
         "db": settings.redis_db,  # 集群架构只支持 db 0
         "decode_responses": True,  # 返回 str 而不是 bytes，日志更好看
-        "socket_timeout": 5,
-        "socket_connect_timeout": 5,
+        "socket_timeout": socket_timeout,
+        "socket_connect_timeout": connect_timeout,
         "socket_keepalive": True,
         "health_check_interval": 30,  # 空闲连接复用前先发个 PING，避开断连
     }

@@ -208,6 +208,7 @@ chip-230/
 ├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
 ├── 02_redis_commands.py          数据面实战：16 类命令族跑一遍（商品页场景）
 ├── 03_end2end.py                 AK 查实例 → 拿地址 → 连上去读写，完整链路
+├── allow_my_ip.py                把本机出口 IP 加进白名单（IP 变了连不上时跑）
 ├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
@@ -298,7 +299,7 @@ Key 管理页的几个细节：
 | `InvalidRegionId.NotFound` | 地域写错 | 例如 `cn-hangzhou`、`cn-beijing` |
 | `NOAUTH Authentication required` | 没传密码 | 填 `REDIS_PASSWORD` |
 | `WRONGPASS` | 密码/用户名错 | 自定义账号要同时填 `REDIS_USERNAME` |
-| `Connection refused` / `timed out` | 白名单没放行 / 用了内网地址 / 安全组 | 加白名单；本机改用公网地址 |
+| `Connection refused` / `timed out` | 白名单没放行 / 用了内网地址 / 安全组 | 加白名单；本机改用公网地址；**出口 IP 变了就跑 `python allow_my_ip.py`** |
 | `CROSSSLOT Keys in request don't hash to the same slot` | 集群架构跨 Slot 多 Key 操作 | 给 Key 加相同 Hash Tag |
 | `MOVED` / `ASK` 重定向 | 用单机客户端连了集群直连地址 | 换 Proxy 地址，或用 `RedisCluster` 客户端 |
 | `ERR unknown command` | 版本不支持该命令 | 对照命令支持表，或升级大版本 |
@@ -318,3 +319,16 @@ Key 管理页的几个细节：
 ## 六、License
 
 [Apache License 2.0](LICENSE)
+
+## 七、出口 IP 变了怎么办
+
+家宽/办公网的公网出口 IP 会变，一变就会被实例白名单挡住，表现为 `Timeout connecting to server`、
+看板一直转圈。一条命令修好：
+
+```bash
+python allow_my_ip.py          # 自动探测当前出口 IP 并追加进白名单
+python allow_my_ip.py --show   # 只看当前白名单
+```
+
+需要 AccessKey 具备改白名单的权限（`AliyunKvstoreFullAccess` 或自定义策略）。
+删掉旧 IP 用 `ModifySecurityIps` 的 `Delete` 模式即可。

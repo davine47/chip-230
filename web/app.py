@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import sys
 import time
@@ -41,18 +42,24 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.json.ensure_ascii = False  # 中文直接输出，别转成 \uXXXX
 
-# 连接与实例信息都做轻量缓存，避免每刷新一次页面就打一次 OpenAPI
+# 连接与实例信息都做轻量缓存，避免每刷新一次页面就打一次 OpenAPI / PING
 _client: redis.Redis | None = None
-_instance_cache: dict[str, object] = {"ts": 0.0, "data": None}
+_instance_cache: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
+STATUS_CACHE: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 INSTANCE_TTL = 300  # 秒
+STATUS_TTL_OK = 3
+STATUS_TTL_FAIL = 15
+STATUS_HARD_TIMEOUT = 3.0  # 秒：探测最长等这么久，绝不把页面拖住
+PROBE = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="redis-probe")
 MAX_KEYS = 200
 MAX_VALUE_CHARS = 100_000
 
 
 def get_client(refresh: bool = False) -> redis.Redis:
+    """页面用的客户端：超时压到 2.5s，Redis 挂掉时接口能快速报错而不是一直等。"""
     global _client
     if _client is None or refresh:
-        _client = redis_conn.build_client(SETTINGS)
+        _client = redis_conn.build_client(SETTINGS, connect_timeout=2.5, socket_timeout=2.5)
     return _client
 
 
@@ -64,8 +71,8 @@ def reset_client() -> None:
 # --------------------------------------------------------------------------
 # 数据采集
 # --------------------------------------------------------------------------
-def redis_status() -> dict:
-    """PING + INFO + DBSIZE，页面顶部的状态胶囊和总览卡片都用它。"""
+def _probe_redis() -> dict:
+    """真正去打 Redis 的函数，跑在线程里，超时由上层兜住。"""
     data = {
         "ok": False,
         "host": SETTINGS.redis_host or "(未配置)",
@@ -75,13 +82,10 @@ def redis_status() -> dict:
         "dbsize": None,
         "error": "",
     }
-    if not SETTINGS.redis_host:
-        data["error"] = "未配置 REDIS_HOST"
-        return data
-
     started = time.perf_counter()
+    client = None
     try:
-        client = get_client()
+        client = redis_conn.build_client(SETTINGS, connect_timeout=1.5, socket_timeout=1.5)
         client.ping()
         data["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
         data["ok"] = True
@@ -94,8 +98,52 @@ def redis_status() -> dict:
         except Exception:  # noqa: BLE001
             pass
     except Exception as exc:  # noqa: BLE001
-        data["error"] = str(exc)
-        reset_client()
+        data["error"] = str(exc)[:200]
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return data
+
+
+def redis_status(force: bool = False) -> dict:
+    """带缓存和硬超时的状态探测。
+
+    白名单没放行 / 网络不通时，TCP 连接可能要几十秒才失败；
+    这里用线程 + 3s 超时兜住，失败结果缓存 15s，保证页面永远能秒开。
+    """
+    now = time.time()
+    cached = STATUS_CACHE["data"]
+    if not force and cached and now - float(STATUS_CACHE["ts"]) < float(STATUS_CACHE["ttl"]):
+        return cached  # type: ignore[return-value]
+
+    data: dict = {
+        "ok": False,
+        "host": SETTINGS.redis_host or "(未配置)",
+        "port": SETTINGS.redis_port,
+        "latency_ms": None,
+        "version": "?",
+        "dbsize": None,
+        "error": "",
+    }
+    if not SETTINGS.redis_host:
+        data["error"] = "未配置 REDIS_HOST"
+    else:
+        future = PROBE.submit(_probe_redis)
+        try:
+            data = future.result(timeout=STATUS_HARD_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            data["error"] = f"连接超时（{STATUS_HARD_TIMEOUT:g}s 内没连上）"
+            reset_client()
+        except Exception as exc:  # noqa: BLE001
+            data["error"] = str(exc)[:200]
+            reset_client()
+
+    STATUS_CACHE.update(
+        ts=time.time(), data=data, ttl=STATUS_TTL_OK if data["ok"] else STATUS_TTL_FAIL
+    )
     return data
 
 
@@ -103,7 +151,8 @@ def instance_summary(force: bool = False) -> dict:
     """调 OpenAPI 拿实例概览，缓存 5 分钟。"""
     now = time.time()
     cached = _instance_cache["data"]
-    if not force and cached and now - float(_instance_cache["ts"]) < INSTANCE_TTL:
+    cached_ttl = float(_instance_cache["ttl"] or INSTANCE_TTL)
+    if not force and cached and now - float(_instance_cache["ts"]) < cached_ttl:
         return cached  # type: ignore[return-value]
 
     summary = {
@@ -145,9 +194,11 @@ def instance_summary(force: bool = False) -> dict:
         summary["charge"] = target.get("ChargeType", "")
         summary["created"] = target.get("CreateTime", "")
         summary["address"] = target.get("ConnectionDomain", "")
-        _instance_cache.update(ts=now, data=summary)
+        _instance_cache.update(ts=now, data=summary, ttl=INSTANCE_TTL)
     except Exception as exc:  # noqa: BLE001
         summary["error"] = str(exc)[:200]
+        # 失败只缓存 30s，别让一次网络抖动把实例页钉死 5 分钟
+        _instance_cache.update(ts=now, data=summary, ttl=30)
     return summary
 
 
