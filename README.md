@@ -228,6 +228,7 @@ chip-230/
 │   ├── ip-whitelist.md           白名单配置完整步骤
 │   ├── oss-quickstart.md         OSS SDK V2 速查与踩坑
 │   └── tablestore-quickstart.md  表格存储宽表模型速查与踩坑
+├── run.md                        看板启动/停止/排错
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -284,6 +285,8 @@ python scripts/03_end2end.py               # 端到端：查实例 → 连接 �
 ./.venv/bin/python web/app.py                 # http://127.0.0.1:8080
 WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 ```
+
+启动、后台运行、停止和常见问题都写在 **[run.md](run.md)** 里。
 
 首页四张卡片：**Redis**、**文档库**、**davine**、**Plan 库**。
 Redis 点进去是二级看板（键空间 / 实例 / 命令，用子导航切换），其余三块各自是一个独立页面。
