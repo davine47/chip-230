@@ -330,12 +330,12 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 
 接口：
 
-| 方法 | 路径 | 说明 |
+| 方法 | `/api/docs`（文档库） | `/api/davine`（davine） |
 | --- | --- | --- |
-| GET | `/api/docs` | 列出全部文档 |
-| POST | `/api/docs/upload` | multipart：`file` + `category` + `description`，单文件上限 25MB |
-| POST | `/api/docs/<id>/link` | 生成 1 小时有效的预签名下载地址 |
-| DELETE | `/api/docs/<id>` | 删索引 + 删 OSS 对象 |
+| GET | 列出全部文档 | 同左 |
+| POST `/upload` | multipart：`file` + `category` + `description`，上限 25MB | 同左，`description` 可选，上限 512MB |
+| POST `/<id>/link` | 生成 1 小时预签名地址 | 同左 |
+| DELETE `/<id>` | 删索引 + 删 OSS 对象 | 同左 |
 
 #### Plan 库 `/plans`
 

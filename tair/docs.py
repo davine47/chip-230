@@ -104,29 +104,6 @@ class DocumentStore:
             "request_id": request_id,
         }
 
-    def save(self, filename: str, data: bytes, category: str, description: str) -> dict[str, Any]:
-        """小文件：直接整块 PUT。"""
-        settings = self.settings
-        name = safe_name(filename)
-        key = self._unique_key(name)
-        put = _oss(settings).put_object(
-            oss.PutObjectRequest(
-                bucket=settings.oss_bucket,
-                key=key,
-                body=data,
-                content_type=guess_content_type(name),
-            )
-        )
-        return self._record(
-            name,
-            oss_helper.object_url(settings, settings.oss_bucket, key),
-            category,
-            description,
-            len(data),
-            put.etag,
-            put.request_id,
-        )
-
     def save_from_file(
         self, filename: str, filepath: str, category: str, description: str
     ) -> dict[str, Any]:
