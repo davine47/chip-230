@@ -206,6 +206,7 @@ chip-230/
 │   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
 │   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
 │   ├── tablestore.py             Tablestore 封装：实例客户端、Row 转 dict
+│   ├── docs.py                   文档库：OSS 上传 + Tablestore 索引（看板用）
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
 │   ├── 00_doctor.py              一键自检：依赖 / AK / OpenAPI / Redis 连通性
@@ -284,8 +285,28 @@ WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 | `/redis` | Redis 二级 | **键空间**：SCAN 搜索、点行看值、改值、设 TTL、删除 |
 | `/redis/instance` | Redis 二级 | 实例信息（OpenAPI）与连接信息，只读 |
 | `/redis/commands` | Redis 二级 | 16 个命令族、版本差异、限制清单 |
+| `/documents` | 顶级 | **文档库**：上传文件到 OSS `agents/docs/`，同时写 Tablestore 索引 |
 
 > 早先的 `/instance`、`/commands` 会 301 跳到 `/redis/` 下对应的新路径。
+
+#### 文档库 `/documents`
+
+上传一次做两件事：
+
+1. 文件写进 OSS：`oss://<bucket>/agents/docs/<文件名>`（同名自动加时间戳，不覆盖）
+2. 往 Tablestore 的 `oss_documents` 表插一行：`id / name / url / describe / category / create_time`
+
+页面要求填 **category** 和 **description**，列表按创建时间倒序，支持「打开」（临时生成
+OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 OSS 对象）。
+
+接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/docs` | 列出全部文档 |
+| POST | `/api/docs/upload` | multipart：`file` + `category` + `description`，单文件上限 25MB |
+| POST | `/api/docs/<id>/link` | 生成 1 小时有效的预签名下载地址 |
+| DELETE | `/api/docs/<id>` | 删索引 + 删 OSS 对象 |
 
 Key 管理页的几个细节：
 

@@ -216,10 +216,6 @@ code {
   gap: 18px;
 }
 
-.modules--single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .module {
   position: relative;
   display: flex;
@@ -340,33 +336,6 @@ code {
   transform: translateX(3px);
 }
 
-/* 顶级只有一张卡时用横向布局，别让卡片空半屏 */
-.module--hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
-  gap: 32px;
-  align-items: center;
-  padding: 30px 32px;
-}
-
-.module__main {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.module--hero .module__stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 22px;
-  padding: 4px 0 4px 30px;
-  border-top: none;
-  border-left: 1px dashed var(--border);
-}
-
-.module--hero .module__cta {
-  margin-top: 4px;
-}
 
 
 /* --------------------------------------------------------------------------
@@ -900,6 +869,68 @@ tbody tr:hover {
 }
 
 /* --------------------------------------------------------------------------
+   文档上传
+   -------------------------------------------------------------------------- */
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 26px 20px;
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone:hover,
+.dropzone--over {
+  border-color: #4f6ef7;
+  background: rgba(79, 110, 247, 0.06);
+}
+
+.dropzone__icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #4f6ef7;
+  background: rgba(79, 110, 247, 0.12);
+}
+
+.dropzone__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dropzone__text {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.upload__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.col-doc {
+  width: 30%;
+}
+
+/* --------------------------------------------------------------------------
    抽屉（编辑 Key）
    -------------------------------------------------------------------------- */
 
@@ -1059,21 +1090,8 @@ tbody tr:hover {
     padding: 20px 16px 40px;
   }
 
-  .modules,
-  .modules--single {
+  .modules {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .module--hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 22px;
-    padding: 24px;
-  }
-
-  .module--hero .module__stats {
-    padding: 18px 0 0;
-    border-left: none;
-    border-top: 1px dashed var(--border);
   }
 
   .intro h1 {

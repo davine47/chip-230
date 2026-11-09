@@ -18,6 +18,7 @@
       <nav class="nav">
         <a class="nav__link {{ 'nav__link--active' if request.path == '/' }}" href="/">总览</a>
         <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/redis') }}" href="/redis">Redis</a>
+        <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/documents') }}" href="/documents">文档</a>
       </nav>
 
       <span class="pill {{ 'pill--off' if not status.ok }}" title="{{ status.error }}">
@@ -29,10 +30,12 @@
     {% block content %}{% endblock %}
 
     <footer class="page__foot">
+      {% block foot %}
       <span>
         {{ status.host }}:{{ status.port }}
         {%- if status.version and status.version != '?' %} · Redis {{ status.version }}{% endif %}
       </span>
+      {% endblock %}
       <span>渲染于 {{ rendered }}</span>
     </footer>
   </div>

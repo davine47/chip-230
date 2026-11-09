@@ -26,9 +26,12 @@ BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parent))
 
 from tair import config, redis_conn  # noqa: E402  （要在 sys.path 之后导入）
+from tair import docs as docs_service  # noqa: E402
 from tair.openapi import describe_instances_overview  # noqa: E402
 
 SETTINGS = config.load_settings()
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 单文件上限 25MB
 
 app = Flask(
     __name__,
@@ -40,11 +43,14 @@ app = Flask(
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.json.ensure_ascii = False  # 中文直接输出，别转成 \uXXXX
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
 # 连接与实例信息都做轻量缓存，避免每刷新一次页面就打一次 OpenAPI / PING
 _client: redis.Redis | None = None
 _instance_cache: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 STATUS_CACHE: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
+DOC_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
+DOC_COUNT_TTL = 30
 INSTANCE_TTL = 300  # 秒
 STATUS_TTL_OK = 3
 STATUS_TTL_FAIL = 15
@@ -268,7 +274,31 @@ def inject_globals() -> dict:
 
 @app.get("/")
 def board():
-    return render_template("index.html")
+    return render_template("index.html", docs=document_stats())
+
+
+def document_stats() -> dict:
+    """首页卡片用：文档数缓存 30 秒，OSS/Tablestore 挂了也不拖垮看板。"""
+    now = time.time()
+    if now - float(DOC_COUNT_CACHE["ts"]) < DOC_COUNT_TTL:
+        return {"ok": True, "count": int(DOC_COUNT_CACHE["value"])}
+    try:
+        count = docs_service.count_documents(SETTINGS)
+        DOC_COUNT_CACHE.update(ts=now, value=count)
+        return {"ok": True, "count": count}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "count": 0, "error": str(exc)[:120]}
+
+
+@app.get("/documents")
+def documents_page():
+    return render_template(
+        "documents.html",
+        stats=document_stats(),
+        bucket=SETTINGS.oss_bucket,
+        prefix=docs_service.docs_prefix(SETTINGS),
+        table=SETTINGS.ts_table,
+    )
 
 
 @app.get("/redis")
@@ -389,6 +419,61 @@ def api_delete_key():
         raise ValueError("缺少 name 参数")
     deleted = get_client().delete(name)
     return jsonify({"ok": True, "deleted": deleted, "key": name})
+
+
+@app.get("/api/docs")
+@api_view
+def api_docs_list():
+    docs = docs_service.list_documents(SETTINGS)
+    return jsonify({"documents": docs, "count": len(docs)})
+
+
+@app.post("/api/docs/upload")
+@api_view
+def api_docs_upload():
+    file = request.files.get("file")
+    category = (request.form.get("category") or "").strip()
+    description = (request.form.get("description") or "").strip()
+
+    if file is None or not file.filename:
+        raise ValueError("请选择要上传的文件")
+    if not category:
+        raise ValueError("category 不能为空")
+    if not description:
+        raise ValueError("description 不能为空")
+
+    data = file.read()
+    if not data:
+        raise ValueError("文件是空的")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+
+    doc = docs_service.save_document(
+        SETTINGS,
+        filename=file.filename,
+        data=data,
+        category=category,
+        description=description,
+    )
+    DOC_COUNT_CACHE.update(ts=0.0, value=0)  # 让首页计数下次重新取
+    return jsonify({"ok": True, "document": doc})
+
+
+@app.post("/api/docs/<doc_id>/link")
+@api_view
+def api_docs_link(doc_id: str):
+    url = docs_service.presign_document(SETTINGS, doc_id)
+    return jsonify({"ok": True, "url": url})
+
+
+@app.delete("/api/docs/<doc_id>")
+@api_view
+def api_docs_delete(doc_id: str):
+    deleted = docs_service.delete_document(SETTINGS, doc_id)
+    DOC_COUNT_CACHE.update(ts=0.0, value=0)
+    if not deleted:
+        raise KeyError("文档不存在")
+    return jsonify({"ok": True, "id": doc_id})
 
 
 @app.get("/api/status")

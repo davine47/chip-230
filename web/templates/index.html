@@ -4,37 +4,55 @@
 {% block content %}
 <section class="intro">
   <p class="eyebrow">CHIP-230 BOARD</p>
-  <h1>一台 Redis，一块看板</h1>
+  <h1>两块看板：Redis 与文档库</h1>
   <p class="lede">
-    连的是阿里云 Tair（兼容 Redis）实例，当前
+    Redis 这边连的是阿里云 Tair（兼容 Redis）实例，当前
     {% if status.ok %}连接正常{% else %}连不上（{{ status.error }}）{% endif %}，
-    库里 <strong>{{ status.dbsize if status.dbsize is not none else '—' }}</strong> 个 Key。
-    点进卡片做 Key 的增删改查，实例信息和命令速查也收在同一块看板里。
+    库里 <strong>{{ status.dbsize if status.dbsize is not none else '—' }}</strong> 个 Key；
+    文档库那边把文件传到 OSS，元数据索引在 Tablestore。
   </p>
 </section>
 
-<main class="modules modules--single">
-  <a class="module module--hero" style="--accent: #4f6ef7" href="/redis">
-    <div class="module__main">
-      <span class="module__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-          <ellipse cx="12" cy="5.5" rx="7.5" ry="3"/>
-          <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
-          <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
-        </svg>
-      </span>
-      <h2>Redis <span class="module__name">键空间 · 实例 · 命令</span></h2>
-      <p class="module__desc">
-        搜索 Key、看值、改值、设过期时间、删除；实例信息与 16 个命令族的支持范围也收在同一块看板里。
-      </p>
-      <span class="module__cta">进入看板 <span aria-hidden="true">→</span></span>
-    </div>
+<main class="modules">
+  <a class="module" style="--accent: #4f6ef7" href="/redis">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <ellipse cx="12" cy="5.5" rx="7.5" ry="3"/>
+        <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+        <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"/>
+      </svg>
+    </span>
+    <h2>Redis <span class="module__name">键空间 · 实例 · 命令</span></h2>
+    <p class="module__desc">
+      搜索 Key、看值、改值、设过期时间、删除；实例信息与 16 个命令族的支持范围也在里面。
+    </p>
     <dl class="module__stats">
       <div class="module__stat"><dt>状态</dt><dd>{{ '在线' if status.ok else '离线' }}</dd></div>
       <div class="module__stat"><dt>版本</dt><dd>{{ status.version }}</dd></div>
       <div class="module__stat"><dt>Key 数</dt><dd>{{ status.dbsize if status.dbsize is not none else '—' }}</dd></div>
       <div class="module__stat"><dt>延迟</dt><dd>{{ status.latency_ms ~ ' ms' if status.latency_ms is not none else '—' }}</dd></div>
     </dl>
+    <span class="module__cta">进入看板 <span aria-hidden="true">→</span></span>
+  </a>
+
+  <a class="module" style="--accent: #10b981" href="/documents">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/>
+        <path d="M13 3v6h6M9 13h6M9 17h4"/>
+      </svg>
+    </span>
+    <h2>文档库 <span class="module__name">OSS + Tablestore</span></h2>
+    <p class="module__desc">
+      上传文件到 OSS 的 agents/docs/，同时把文件名、分类、描述、地址写进 Tablestore 索引表。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>文档数</dt><dd>{{ docs.count if docs.ok else '—' }}</dd></div>
+      <div class="module__stat"><dt>对象存储</dt><dd>OSS</dd></div>
+      <div class="module__stat"><dt>索引</dt><dd>Tablestore</dd></div>
+      <div class="module__stat"><dt>路径</dt><dd class="mono">agents/docs/</dd></div>
+    </dl>
+    <span class="module__cta">进入文档库 <span aria-hidden="true">→</span></span>
   </a>
 </main>
 {% endblock %}

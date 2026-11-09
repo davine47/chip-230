@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · 文档库{% endblock %}
+
+{% block content %}
+<main class="board" style="--accent: #10b981">
+  <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
+
+  <div class="board__head">
+    <span class="board__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/>
+        <path d="M13 3v6h6M9 13h6M9 17h4"/>
+      </svg>
+    </span>
+    <div>
+      <span class="chip chip--mono">oss://{{ bucket }}/{{ prefix }}</span>
+      <h1>文档库</h1>
+      <p class="board__desc">
+        文件上传到 OSS 的 <code>{{ prefix }}</code> 下，同时在 Tablestore 的
+        <code>oss_documents</code> 表里写一行索引（文件名、分类、描述、地址、时间）。
+      </p>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>上传文件</h2>
+      <span class="hint">单文件上限 25MB，分类和描述都是必填</span>
+    </div>
+
+    <div class="panel">
+      <form id="uploadForm" class="upload" autocomplete="off">
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <input id="fileInput" type="file" hidden />
+          <span class="dropzone__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/>
+              <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+            </svg>
+          </span>
+          <span class="dropzone__text" id="fileHint">拖文件到这里，或点击选择</span>
+        </label>
+
+        <div class="row">
+          <label class="field">
+            <span>分类 category</span>
+            <input id="category" type="text" list="categoryList" placeholder="例如：notes / spec / recipe" required />
+            <datalist id="categoryList"></datalist>
+          </label>
+          <label class="field">
+            <span>描述 description</span>
+            <input id="description" type="text" placeholder="一句话说明这份文档是什么" required />
+          </label>
+        </div>
+
+        <div class="upload__foot">
+          <span class="hint" id="uploadHint">选择文件后点上传</span>
+          <button class="btn btn--primary" id="uploadBtn" type="submit">上传并入库</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>已上传</h2>
+      <span class="hint" id="listHint">按创建时间倒序</span>
+    </div>
+
+    <div class="panel panel--flush">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-doc">文件名</th>
+              <th>分类</th>
+              <th>描述</th>
+              <th>创建时间</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="docRows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="docEmpty" hidden>
+        <span class="empty__mark">∅</span>
+        <span id="docEmptyText">还没有文档，上传一份试试</span>
+      </p>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+
+{% block foot %}
+<span>oss://{{ bucket }}/{{ prefix }} · Tablestore {{ table }}</span>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='docs.js') }}" defer></script>
+{% endblock %}
