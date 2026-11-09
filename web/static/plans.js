@@ -73,12 +73,14 @@
   }
 
   // ---------------------------------------------------------------- 列表
-  function renderPlans(plans) {
+  function renderPlans(plans, total = plans.length) {
     els.rows.replaceChildren();
     els.empty.hidden = plans.length > 0;
-    els.listHint.textContent = plans.length
-      ? `共 ${plans.length} 份，按自增 id 倒序`
-      : "暂无计划";
+    els.listHint.textContent = !plans.length
+      ? "暂无计划"
+      : total > plans.length
+        ? `共 ${total} 份，显示最新 ${plans.length} 份，按自增 id 倒序`
+        : `共 ${total} 份，按自增 id 倒序`;
 
     plans.forEach((plan) => {
       const tr = document.createElement("tr");
@@ -149,7 +151,7 @@
       const response = await fetch("/api/plans");
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "加载失败");
-      renderPlans(data.plans || []);
+      renderPlans(data.plans || [], data.total);
     } catch (error) {
       els.empty.hidden = false;
       els.emptyText.textContent = error.message;

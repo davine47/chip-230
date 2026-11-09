@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import sys
 from urllib.parse import quote, unquote, urlsplit
 
 import alibabacloud_oss_v2 as oss
@@ -85,3 +86,18 @@ def read_body(result) -> bytes:
     """get_object 的 body 是老式流对象，统一读成 bytes。"""
     body = result.body
     return body.read() if hasattr(body, "read") else bytes(body)
+
+
+def discard_object(client: oss.Client, bucket: str, key: str) -> None:
+    """补偿删除：索引写失败时，把刚传上去的对象删掉，免得留下看板上看不到的孤儿。
+
+    删除本身失败也不再抛（原始异常更重要），只打印出来，交给 scripts/06_reconcile.py 兜底。
+    """
+    try:
+        client.delete_object(oss.DeleteObjectRequest(bucket=bucket, key=key))
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[warn] 回滚 OSS 对象失败，留下孤儿对象 {bucket}/{key}：{exc}"
+            "（可运行 scripts/06_reconcile.py 清理）",
+            file=sys.stderr,
+        )

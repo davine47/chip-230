@@ -123,12 +123,17 @@ def save_plan(
     if github_project_url:
         attrs.append(("github_project_url", github_project_url))
     row = Row([("uuid", doc_uuid), ("id", PK_AUTO_INCR)], attrs)
-    _, ret = _ts(settings).put_row(
-        TABLE,
-        row,
-        Condition(RowExistenceExpectation.IGNORE),
-        return_type=ReturnType.RT_PK,
-    )
+    try:
+        _, ret = _ts(settings).put_row(
+            TABLE,
+            row,
+            Condition(RowExistenceExpectation.IGNORE),
+            return_type=ReturnType.RT_PK,
+        )
+    except Exception:
+        # 索引没写进去：回滚刚上传的 .md，免得留下看板看不到的孤儿对象
+        oss_helper.discard_object(_oss(settings), bucket, key)
+        raise
     auto_id = dict(ret.primary_key).get("id") if ret and ret.primary_key else None
 
     return {
@@ -149,23 +154,30 @@ def save_plan(
     }
 
 
-def list_plans(settings: Settings, limit: int = 200) -> list[dict[str, Any]]:
-    """按 id（自增）倒序返回，最新的在最前面。"""
-    _, _, rows, _ = _ts(settings).get_range(
+def scan_plans(settings: Settings) -> tuple[list[dict[str, Any]], bool]:
+    """分页扫完 plans 表，按 id（自增）倒序返回 (全部计划, 是否超过扫描上限被截断)。
+
+    分区键是随机 uuid，get_range 按 uuid 排序；只取第一页再按 id 排序会漏掉最新的计划。
+    """
+    rows, truncated = ts_helper.scan_all(
+        _ts(settings),
         TABLE,
-        "FORWARD",
         [("uuid", INF_MIN), ("id", INF_MIN)],
         [("uuid", INF_MAX), ("id", INF_MAX)],
-        columns_to_get=COLUMNS,
-        limit=limit,
+        COLUMNS,
     )
     plans = []
-    for row in rows or []:
+    for row in rows:
         item = ts_helper.primary_key_dict(row)
         item.update(ts_helper.row_to_dict(row))
         plans.append(item)
     plans.sort(key=lambda p: p.get("id") or 0, reverse=True)
-    return plans
+    return plans, truncated
+
+
+def list_plans(settings: Settings, limit: int = 200) -> list[dict[str, Any]]:
+    """最新的 limit 份（按自增 id 倒序）。"""
+    return scan_plans(settings)[0][:limit]
 
 
 def get_plan(settings: Settings, plan_uuid: str, plan_id: int) -> dict[str, Any] | None:
@@ -196,21 +208,23 @@ def presign_plan(settings: Settings, plan_uuid: str, plan_id: int, hours: int = 
 
 
 def delete_plan(settings: Settings, plan_uuid: str, plan_id: int) -> bool:
+    """先删 OSS 对象（幂等），再删索引行；顺序原因同 docs.DocumentStore.delete。"""
     plan = get_plan(settings, plan_uuid, plan_id)
     if not plan:
         return False
-    _ts(settings).delete_row(
-        TABLE,
-        [("uuid", plan_uuid), ("id", plan_id)],
-        Condition(RowExistenceExpectation.IGNORE),
-    )
     key = key_from_url(plan.get("oss_url", "")) or (
         f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
     )
     if key:
         _oss(settings).delete_object(oss.DeleteObjectRequest(bucket=settings.oss_bucket, key=key))
+    _ts(settings).delete_row(
+        TABLE,
+        [("uuid", plan_uuid), ("id", plan_id)],
+        Condition(RowExistenceExpectation.IGNORE),
+    )
     return True
 
 
 def count_plans(settings: Settings) -> int:
-    return len(list_plans(settings, limit=1000))
+    """真实总数（以前到 1000 就封顶）。"""
+    return len(scan_plans(settings)[0])

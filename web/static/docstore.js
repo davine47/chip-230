@@ -65,10 +65,14 @@
   }
 
   // ---------------------------------------------------------------- 列表
-  function renderDocs(docs) {
+  function renderDocs(docs, total = docs.length) {
     els.rows.replaceChildren();
     els.empty.hidden = docs.length > 0;
-    els.listHint.textContent = docs.length ? `共 ${docs.length} 份，按创建时间倒序` : "暂无文档";
+    els.listHint.textContent = !docs.length
+      ? "暂无文档"
+      : total > docs.length
+        ? `共 ${total} 份，显示最新 ${docs.length} 份，按创建时间倒序`
+        : `共 ${total} 份，按创建时间倒序`;
 
     if (els.categoryList) {
       const categories = new Set(docs.map((d) => d.category).filter(Boolean));
@@ -127,7 +131,7 @@
       const response = await fetch(api);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "加载失败");
-      renderDocs(data.documents || []);
+      renderDocs(data.documents || [], data.total);
     } catch (error) {
       els.empty.hidden = false;
       els.emptyText.textContent = error.message;

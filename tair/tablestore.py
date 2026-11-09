@@ -47,3 +47,39 @@ def row_to_dict(row) -> dict:
 
 def primary_key_dict(row) -> dict:
     return dict(row.primary_key or []) if row is not None else {}
+
+
+# get_range 单次最多返回 5000 行 / 4MB，超过就要拿 next_start_primary_key 接着扫。
+# 看板的文档量级在几千以内，扫全表再排序足够；超过这个上限说明该上多元索引了。
+SCAN_PAGE_ROWS = 5000
+SCAN_MAX_ROWS = 10_000
+
+
+def scan_all(
+    client,
+    table: str,
+    start_pk: list,
+    end_pk: list,
+    columns: list[str] | None = None,
+    max_rows: int = SCAN_MAX_ROWS,
+) -> tuple[list, bool]:
+    """分页扫完 [start_pk, end_pk) 整个范围，返回 (行列表, 是否因超过 max_rows 被截断)。
+
+    只调一次 get_range 只能拿到第一页；而且行是按主键排序的，不是按时间，
+    所以「取前 N 行再按时间排序」得到的并不是最新的 N 行。
+    """
+    rows: list = []
+    next_pk = start_pk
+    while next_pk is not None:
+        _, next_pk, page, _ = client.get_range(
+            table,
+            "FORWARD",
+            next_pk,
+            end_pk,
+            columns_to_get=columns,
+            limit=min(SCAN_PAGE_ROWS, max_rows - len(rows)),
+        )
+        rows.extend(page or [])
+        if len(rows) >= max_rows:
+            return rows, next_pk is not None
+    return rows, False

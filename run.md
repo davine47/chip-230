@@ -151,3 +151,17 @@ done
 
 - 默认只监听 `127.0.0.1`。**不要**把 `WEB_HOST` 改成 `0.0.0.0` 暴露到公网——这个服务能直接改线上实例数据、删 OSS 对象。
 - Flask 自带的 `app.run()` 只适合本地/内网调试，不要直接当生产服务器。
+
+---
+
+## 八、测试与对账
+
+```bash
+# 回归测试：不连云、不需要装 SDK
+./.venv/bin/python -m unittest discover -s tests -v
+
+# OSS 与 Tablestore 对账：默认只读；--delete-orphans 删除 1 小时前的孤儿对象
+./.venv/bin/python scripts/06_reconcile.py
+```
+
+审查结论与待办见 `docs/code-review-2026-11-10.md`。

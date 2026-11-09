@@ -6,6 +6,11 @@
     davine  /davine      davine_exchange/   + davine_oss_documents
 
 上传流程：文件写 OSS → 往表里插一行元数据；读取时按 id 查表，下载时再生成预签名链接。
+
+两边不是一个事务，靠顺序 + 补偿保证不留孤儿：
+    上传：先写 OSS，写表失败就删掉刚传的对象
+    删除：先删 OSS（幂等），再删索引行；删行失败时索引还在，重试即可
+漏网之鱼由 scripts/06_reconcile.py 对账清理。
 """
 
 from __future__ import annotations
@@ -123,34 +128,43 @@ class DocumentStore:
                 filepath,
             )
         )
-        return self._record(
-            name,
-            oss_helper.object_url(settings, settings.oss_bucket, key),
-            category,
-            description,
-            Path(filepath).stat().st_size,
-            getattr(result, "etag", "") or "",
-            "",
-        )
+        try:
+            return self._record(
+                name,
+                oss_helper.object_url(settings, settings.oss_bucket, key),
+                category,
+                description,
+                Path(filepath).stat().st_size,
+                getattr(result, "etag", "") or "",
+                "",
+            )
+        except Exception:
+            # 索引没写进去，对象就是孤儿：看板列不出来、也删不掉，所以立刻回滚
+            oss_helper.discard_object(_oss(settings), settings.oss_bucket, key)
+            raise
 
     # ---------------------------------------------------------------- 读
-    def list(self, limit: int = 200) -> list[dict[str, Any]]:
-        """扫全表，按创建时间倒序返回（表上还没建二级索引，量小够用）。"""
-        _, _, rows, _ = _ts(self.settings).get_range(
-            self.table,
-            "FORWARD",
-            [("id", INF_MIN)],
-            [("id", INF_MAX)],
-            columns_to_get=COLUMNS,
-            limit=limit,
+    def scan(self) -> tuple[list[dict[str, Any]], bool]:
+        """分页扫完整张表，按创建时间倒序返回 (全部文档, 是否超过扫描上限被截断)。
+
+        主键 id 是随机 uuid，get_range 返回的是 uuid 字典序而不是时间序，
+        所以必须扫完再排序；只取第一页再排序，最新上传的文档可能根本不在里面。
+        文档数超过 ts_helper.SCAN_MAX_ROWS 时，应改用多元索引按 create_time 排序。
+        """
+        rows, truncated = ts_helper.scan_all(
+            _ts(self.settings), self.table, [("id", INF_MIN)], [("id", INF_MAX)], COLUMNS
         )
         docs = []
-        for row in rows or []:
+        for row in rows:
             item = ts_helper.primary_key_dict(row)
             item.update(ts_helper.row_to_dict(row))
             docs.append(item)
         docs.sort(key=lambda d: d.get("create_time") or 0, reverse=True)
-        return docs
+        return docs, truncated
+
+    def list(self, limit: int = 200) -> list[dict[str, Any]]:
+        """最新的 limit 份（按创建时间倒序）。"""
+        return self.scan()[0][:limit]
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
         _, row, _ = _ts(self.settings).get_row(self.table, [("id", doc_id)], columns_to_get=COLUMNS)
@@ -173,22 +187,27 @@ class DocumentStore:
 
     # ---------------------------------------------------------------- 删
     def delete(self, doc_id: str) -> bool:
-        """删索引行 + 删 OSS 对象。"""
+        """先删 OSS 对象，再删索引行。
+
+        顺序不能反：先删行的话，一旦删对象失败，就留下一个没有索引、看板上永远删不掉的对象。
+        现在这样，删对象失败时索引还在，可以重试；OSS 删除是幂等的，对象已不在也返回成功。
+        """
         doc = self.get(doc_id)
         if not doc:
             return False
-        _ts(self.settings).delete_row(
-            self.table, [("id", doc_id)], Condition(RowExistenceExpectation.IGNORE)
-        )
         key = key_from_url(doc.get("url", ""))
         if key:
             _oss(self.settings).delete_object(
                 oss.DeleteObjectRequest(bucket=self.settings.oss_bucket, key=key)
             )
+        _ts(self.settings).delete_row(
+            self.table, [("id", doc_id)], Condition(RowExistenceExpectation.IGNORE)
+        )
         return True
 
     def count(self) -> int:
-        return len(self.list(limit=1000))
+        """真实总数（以前是 len(list(limit=1000))，到 1000 就封顶）。"""
+        return len(self.scan()[0])
 
 
 def documents(settings: Settings) -> DocumentStore:

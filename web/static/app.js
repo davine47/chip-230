@@ -120,15 +120,16 @@
     els.fTtl.value = ttl && ttl > 0 ? ttl : "";
     els.fValue.value = value ?? "";
 
-    const editable = (type || "string") === "string";
+    // 截断的值只是前一部分，保存回去会把后半段永久覆盖掉，所以和非 String 一样只读
+    const editable = (type || "string") === "string" && !truncated;
     els.fValue.disabled = !editable;
     els.saveBtn.disabled = !editable;
     els.deleteBtn.hidden = isNew;
 
-    if (!editable) {
+    if (truncated && (type || "string") === "string") {
+      els.fHint.textContent = "值太大，这里只显示了前一部分，为防止截断覆盖原值已禁止编辑；要改请用 redis-cli。";
+    } else if (!editable) {
       els.fHint.textContent = `非 String 类型（${type}）只读：这里只能查看和删除，改值请用对应类型的原生命令。`;
-    } else if (truncated) {
-      els.fHint.textContent = "值太大，这里只显示了截断后的内容，保存会覆盖原值，谨慎操作。";
     } else {
       els.fHint.textContent = "保存会直接覆盖同名 Key 的值；TTL 留空表示永不过期。";
     }
@@ -173,6 +174,7 @@
           key,
           value: els.fValue.value,
           ttl: els.fTtl.value.trim() === "" ? null : Number(els.fTtl.value),
+          create: Boolean(state.editing?.isNew), // 新建时服务端发现同名 Key 会拒绝，而不是覆盖
         }),
       });
       toast(`已保存 ${key}`);

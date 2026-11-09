@@ -27,7 +27,7 @@ from flask import Flask, jsonify, redirect, render_template, request
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parent))
 
-from tair import config, redis_conn  # noqa: E402  （要在 sys.path 之后导入）
+from tair import config, redis_conn, redis_ops  # noqa: E402  （要在 sys.path 之后导入）
 from tair import docs as docs_service  # noqa: E402
 from tair import plans as plans_service  # noqa: E402
 from tair.openapi import describe_instances_overview  # noqa: E402
@@ -63,7 +63,8 @@ STATUS_TTL_FAIL = 15
 STATUS_HARD_TIMEOUT = 3.0  # 秒：探测最长等这么久，绝不把页面拖住
 PROBE = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="redis-probe")
 MAX_KEYS = 200
-MAX_VALUE_CHARS = 100_000
+MAX_VALUE_CHARS = redis_ops.MAX_VALUE_CHARS  # 预览上限；超过的值看板只读，见 write_string_key
+LIST_LIMIT = 200  # 列表页最多返回多少条（总数另给）
 
 
 def get_client(refresh: bool = False) -> redis.Redis:
@@ -474,21 +475,17 @@ def api_put_key():
     name = str(payload.get("key", "")).strip()
     value = payload.get("value", "")
     ttl_raw = payload.get("ttl")
+    create = bool(payload.get("create"))  # 前端「新建」时为 true：已存在就报错，不覆盖
 
     if not name:
         raise ValueError("Key 不能为空")
     if len(name) > 512:
         raise ValueError("Key 太长（上限 512 字节）")
+    ttl = None if ttl_raw in (None, "", 0, "0") else int(ttl_raw)
 
     client = get_client()
-    client.set(name, value)
-    if ttl_raw in (None, "", 0, "0"):
-        client.persist(name)
-    else:
-        seconds = int(ttl_raw)
-        if seconds <= 0:
-            raise ValueError("TTL 必须是正整数，留空表示永不过期")
-        client.expire(name, seconds)
+    # 类型检查 + 截断保护 + SET EX 原子写入都在这里，见 tair/redis_ops.py
+    redis_ops.write_string_key(client, name, value, ttl=ttl, create=create)
     return jsonify({"ok": True, "key": name, "ttl": client.ttl(name)})
 
 
@@ -513,8 +510,11 @@ def register_doc_api(
     """一块文档看板的 4 个接口：列表 / 上传 / 预签名 / 删除。"""
 
     def list_view():
-        docs = factory(SETTINGS).list()
-        return jsonify({"documents": docs, "count": len(docs)})
+        docs, truncated = factory(SETTINGS).scan()
+        shown = docs[:LIST_LIMIT]
+        return jsonify(
+            {"documents": shown, "count": len(shown), "total": len(docs), "truncated": truncated}
+        )
 
     def upload_view():
         file = request.files.get("file")
@@ -596,8 +596,11 @@ register_doc_api(
 @app.get("/api/plans")
 @api_view
 def api_plans_list():
-    items = plans_service.list_plans(SETTINGS)
-    return jsonify({"plans": items, "count": len(items)})
+    items, truncated = plans_service.scan_plans(SETTINGS)
+    shown = items[:LIST_LIMIT]
+    return jsonify(
+        {"plans": shown, "count": len(shown), "total": len(items), "truncated": truncated}
+    )
 
 
 @app.post("/api/plans/upload")
