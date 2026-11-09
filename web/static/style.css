@@ -878,6 +878,11 @@ tbody tr:hover {
   gap: 16px;
 }
 
+.upload textarea {
+  /* 上传表单里的多行输入不用像抽屉里那样撑满 */
+  min-height: 84px;
+}
+
 .dropzone {
   display: flex;
   flex-direction: column;
@@ -928,6 +933,10 @@ tbody tr:hover {
 
 .col-doc {
   width: 30%;
+}
+
+.col-id {
+  width: 90px;
 }
 
 /* --------------------------------------------------------------------------

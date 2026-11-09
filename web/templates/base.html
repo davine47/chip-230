@@ -19,6 +19,7 @@
         <a class="nav__link {{ 'nav__link--active' if request.path == '/' }}" href="/">总览</a>
         <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/redis') }}" href="/redis">Redis</a>
         <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/documents') }}" href="/documents">文档</a>
+        <a class="nav__link {{ 'nav__link--active' if request.path.startswith('/plans') }}" href="/plans">Plans</a>
       </nav>
 
       <span class="pill {{ 'pill--off' if not status.ok }}" title="{{ status.error }}">

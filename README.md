@@ -207,6 +207,7 @@ chip-230/
 │   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
 │   ├── tablestore.py             Tablestore 封装：实例客户端、Row 转 dict
 │   ├── docs.py                   文档库：OSS 上传 + Tablestore 索引（看板用）
+│   ├── plans.py                  Plan 库：.md 上传 + plans 表（uuid + 自增 id）
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
 │   ├── 00_doctor.py              一键自检：依赖 / AK / OpenAPI / Redis 连通性
@@ -286,6 +287,7 @@ WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 | `/redis/instance` | Redis 二级 | 实例信息（OpenAPI）与连接信息，只读 |
 | `/redis/commands` | Redis 二级 | 16 个命令族、版本差异、限制清单 |
 | `/documents` | 顶级 | **文档库**：上传文件到 OSS `agents/docs/`，同时写 Tablestore 索引 |
+| `/plans` | 顶级 | **Plan 库**：只收 `.md`，传 OSS `plans/`，写 Tablestore `plans` 表 |
 
 > 早先的 `/instance`、`/commands` 会 301 跳到 `/redis/` 下对应的新路径。
 
@@ -307,6 +309,25 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 | POST | `/api/docs/upload` | multipart：`file` + `category` + `description`，单文件上限 25MB |
 | POST | `/api/docs/<id>/link` | 生成 1 小时有效的预签名下载地址 |
 | DELETE | `/api/docs/<id>` | 删索引 + 删 OSS 对象 |
+
+#### Plan 库 `/plans`
+
+只接受 `.md`，要求填 **plan_info**（可选 `plan_name` / `trace_id` / `trace_info`）。
+
+| 项 | 值 |
+| --- | --- |
+| OSS 路径 | `oss://<bucket>/plans/<plan_name>.md`，重名自动加时间戳 |
+| 表 | Tablestore `plans` |
+| 主键 | `uuid`（STRING，分区键）+ `id`（INTEGER，**自增**） |
+| 属性列 | `plan_name` / `trace_id` / `trace_info` / `plan_info` / `create_time` / `oss_key` |
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/plans/upload \
+  -F "file=@plan.md" -F "plan_info=计划摘要" -F "trace_id=TRACE-1"
+```
+
+> 自增 id 不是 1、2、3，而是**时间型的 16 位整数**（如 `1794257644716000`），
+> 由服务端生成，保证唯一且单调递增，可以直接用来排序。
 
 Key 管理页的几个细节：
 
@@ -420,6 +441,7 @@ python scripts/05_tablestore_demo.py --keep     # 保留演示行
 ```
 
 实例是**容量型（HYBRID）+ 按量付费**（`ReservedThroughput(0, 0)`），地域 `cn-beijing`。
+`plans` 表则在 `uuid`（分区键）之外多了一个**自增主键** `id`，见上文 Plan 库。
 
 > 注意：Tablestore 的**第一个主键（分区键）不能自增**，所以 `id` 用了字符串 UUID；
 > 想要整型自增得额外加一个分区键列，详见 [docs/tablestore-quickstart.md](docs/tablestore-quickstart.md)。

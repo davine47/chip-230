@@ -108,6 +108,7 @@ class Settings:
     oss_endpoint: str  # 留空则按地域自动拼 oss-{region}.aliyuncs.com
     oss_prefix: str  # 演示对象都写在这个前缀下，方便清理
     oss_docs_prefix: str  # 看板上传的文档统一放这里，默认 agents/docs/
+    oss_plans_prefix: str  # 计划文件放这里，默认 plans/
     # ---------- 表格存储：Tablestore（跑 scripts/05_tablestore_demo.py 用）----------
     ts_instance: str
     ts_table: str
@@ -165,6 +166,7 @@ def load_settings() -> Settings:
         oss_endpoint=_env("OSS_ENDPOINT"),
         oss_prefix=_env("OSS_PREFIX", "chip-230-demo/"),
         oss_docs_prefix=_env("OSS_DOCS_PREFIX", "agents/docs/"),
+        oss_plans_prefix=_env("OSS_PLANS_PREFIX", "plans/"),
         ts_instance=_env("OTS_INSTANCE"),
         ts_table=_env("OTS_TABLE", "oss_documents"),
         ts_endpoint=_env("OTS_ENDPOINT"),

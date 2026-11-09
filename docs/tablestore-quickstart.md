@@ -51,6 +51,25 @@ Tablestore 有条硬规则：**第一个主键（分区键）不能自增**，�
 
 ---
 
+### 自增主键：`plans` 表的写法
+
+`plans` 表把 `id` 放在第二位做自增：
+
+```python
+TableMeta("plans", [("uuid", "STRING"), ("id", "INTEGER", PK_AUTO_INCR)])
+```
+
+写入时 `id` 传 `PK_AUTO_INCR`，服务端回填；要拿到生成值需要 `return_type=ReturnType.RT_PK`：
+
+```python
+_, ret = client.put_row("plans", row, Condition(RowExistenceExpectation.IGNORE),
+                        return_type=ReturnType.RT_PK)
+auto_id = dict(ret.primary_key)["id"]
+```
+
+**自增出来的不是 1、2、3**，而是时间型的大整数（实测 `1794257563404000` → `1794257563485000`），
+唯一且单调递增，适合排序，但别拿它当「第几条」。
+
 ## 3. 计费：容量型 + 按量付费
 
 | 维度 | 本项目的选择 |

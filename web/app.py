@@ -27,6 +27,7 @@ sys.path.insert(0, str(BASE_DIR.parent))
 
 from tair import config, redis_conn  # noqa: E402  （要在 sys.path 之后导入）
 from tair import docs as docs_service  # noqa: E402
+from tair import plans as plans_service  # noqa: E402
 from tair.openapi import describe_instances_overview  # noqa: E402
 
 SETTINGS = config.load_settings()
@@ -50,6 +51,7 @@ _client: redis.Redis | None = None
 _instance_cache: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 STATUS_CACHE: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 DOC_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
+PLAN_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
 DOC_COUNT_TTL = 30
 INSTANCE_TTL = 300  # 秒
 STATUS_TTL_OK = 3
@@ -274,7 +276,7 @@ def inject_globals() -> dict:
 
 @app.get("/")
 def board():
-    return render_template("index.html", docs=document_stats())
+    return render_template("index.html", docs=document_stats(), plans=plan_stats())
 
 
 def document_stats() -> dict:
@@ -298,6 +300,29 @@ def documents_page():
         bucket=SETTINGS.oss_bucket,
         prefix=docs_service.docs_prefix(SETTINGS),
         table=SETTINGS.ts_table,
+    )
+
+
+def plan_stats() -> dict:
+    now = time.time()
+    if now - float(PLAN_COUNT_CACHE["ts"]) < DOC_COUNT_TTL:
+        return {"ok": True, "count": int(PLAN_COUNT_CACHE["value"])}
+    try:
+        count = plans_service.count_plans(SETTINGS)
+        PLAN_COUNT_CACHE.update(ts=now, value=count)
+        return {"ok": True, "count": count}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "count": 0, "error": str(exc)[:120]}
+
+
+@app.get("/plans")
+def plans_page():
+    return render_template(
+        "plans.html",
+        stats=plan_stats(),
+        bucket=SETTINGS.oss_bucket,
+        prefix=plans_service.plans_prefix(SETTINGS),
+        table=plans_service.TABLE,
     )
 
 
@@ -474,6 +499,65 @@ def api_docs_delete(doc_id: str):
     if not deleted:
         raise KeyError("文档不存在")
     return jsonify({"ok": True, "id": doc_id})
+
+
+@app.get("/api/plans")
+@api_view
+def api_plans_list():
+    items = plans_service.list_plans(SETTINGS)
+    return jsonify({"plans": items, "count": len(items)})
+
+
+@app.post("/api/plans/upload")
+@api_view
+def api_plans_upload():
+    file = request.files.get("file")
+    plan_name = (request.form.get("plan_name") or "").strip()
+    plan_info = (request.form.get("plan_info") or "").strip()
+    trace_id = (request.form.get("trace_id") or "").strip()
+    trace_info = (request.form.get("trace_info") or "").strip()
+
+    if file is None or not file.filename:
+        raise ValueError("请选择要上传的 .md 文件")
+    if not file.filename.lower().endswith(".md"):
+        raise ValueError("计划只支持 .md 格式")
+    if not plan_info:
+        raise ValueError("plan_info 不能为空")
+
+    data = file.read()
+    if not data:
+        raise ValueError("文件是空的")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+
+    plan = plans_service.save_plan(
+        SETTINGS,
+        filename=file.filename,
+        data=data,
+        plan_name=plan_name or file.filename,
+        trace_id=trace_id,
+        trace_info=trace_info,
+        plan_info=plan_info,
+    )
+    PLAN_COUNT_CACHE.update(ts=0.0, value=0)
+    return jsonify({"ok": True, "plan": plan})
+
+
+@app.post("/api/plans/<plan_uuid>/<int:plan_id>/link")
+@api_view
+def api_plans_link(plan_uuid: str, plan_id: int):
+    url = plans_service.presign_plan(SETTINGS, plan_uuid, plan_id)
+    return jsonify({"ok": True, "url": url})
+
+
+@app.delete("/api/plans/<plan_uuid>/<int:plan_id>")
+@api_view
+def api_plans_delete(plan_uuid: str, plan_id: int):
+    deleted = plans_service.delete_plan(SETTINGS, plan_uuid, plan_id)
+    PLAN_COUNT_CACHE.update(ts=0.0, value=0)
+    if not deleted:
+        raise KeyError("计划不存在")
+    return jsonify({"ok": True})
 
 
 @app.get("/api/status")

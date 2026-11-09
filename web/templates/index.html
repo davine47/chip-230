@@ -4,12 +4,12 @@
 {% block content %}
 <section class="intro">
   <p class="eyebrow">CHIP-230 BOARD</p>
-  <h1>两块看板：Redis 与文档库</h1>
+  <h1>三块看板：Redis、文档库与 Plan 库</h1>
   <p class="lede">
     Redis 这边连的是阿里云 Tair（兼容 Redis）实例，当前
     {% if status.ok %}连接正常{% else %}连不上（{{ status.error }}）{% endif %}，
     库里 <strong>{{ status.dbsize if status.dbsize is not none else '—' }}</strong> 个 Key；
-    文档库那边把文件传到 OSS，元数据索引在 Tablestore。
+    文档库把文件传到 OSS、索引写 Tablestore；Plan 库只收 .md 计划，id 用自增。
   </p>
 </section>
 
@@ -30,7 +30,6 @@
       <div class="module__stat"><dt>状态</dt><dd>{{ '在线' if status.ok else '离线' }}</dd></div>
       <div class="module__stat"><dt>版本</dt><dd>{{ status.version }}</dd></div>
       <div class="module__stat"><dt>Key 数</dt><dd>{{ status.dbsize if status.dbsize is not none else '—' }}</dd></div>
-      <div class="module__stat"><dt>延迟</dt><dd>{{ status.latency_ms ~ ' ms' if status.latency_ms is not none else '—' }}</dd></div>
     </dl>
     <span class="module__cta">进入看板 <span aria-hidden="true">→</span></span>
   </a>
@@ -50,9 +49,27 @@
       <div class="module__stat"><dt>文档数</dt><dd>{{ docs.count if docs.ok else '—' }}</dd></div>
       <div class="module__stat"><dt>对象存储</dt><dd>OSS</dd></div>
       <div class="module__stat"><dt>索引</dt><dd>Tablestore</dd></div>
-      <div class="module__stat"><dt>路径</dt><dd class="mono">agents/docs/</dd></div>
     </dl>
     <span class="module__cta">进入文档库 <span aria-hidden="true">→</span></span>
+  </a>
+
+  <a class="module" style="--accent: #8b5cf6" href="/plans">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v18H6.5A2.5 2.5 0 0 1 4 18.5z"/>
+        <path d="M8 8h7M8 12h7M8 16h4"/>
+      </svg>
+    </span>
+    <h2>Plan 库 <span class="module__name">.md + 自增 id</span></h2>
+    <p class="module__desc">
+      只收 .md 计划文件，落到 OSS 的 plans/ 目录，索引写进 Tablestore 的 plans 表。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>计划数</dt><dd>{{ plans.count if plans.ok else '—' }}</dd></div>
+      <div class="module__stat"><dt>格式</dt><dd>.md</dd></div>
+      <div class="module__stat"><dt>主键</dt><dd>uuid + 自增 id</dd></div>
+    </dl>
+    <span class="module__cta">进入 Plan 库 <span aria-hidden="true">→</span></span>
   </a>
 </main>
 {% endblock %}

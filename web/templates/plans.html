@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}chip-230 · Plan 库{% endblock %}
+
+{% block content %}
+<main class="board" style="--accent: #8b5cf6">
+  <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
+
+  <div class="board__head">
+    <span class="board__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v18H6.5A2.5 2.5 0 0 1 4 18.5z"/>
+        <path d="M8 8h7M8 12h7M8 16h4"/>
+      </svg>
+    </span>
+    <div>
+      <span class="chip chip--mono">oss://{{ bucket }}/{{ prefix }}</span>
+      <h1>Plan 库</h1>
+      <p class="board__desc">
+        计划文件只收 <code>.md</code>，上传后写进 OSS 的 <code>{{ prefix }}</code>，
+        同时往 Tablestore 的 <code>{{ table }}</code> 表插一行
+        （uuid / 自增 id / plan_name / trace_id / trace_info / plan_info / create_time）。
+      </p>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>上传计划</h2>
+      <span class="hint">仅支持 .md，plan_info 必填</span>
+    </div>
+
+    <div class="panel">
+      <form id="planForm" class="upload" autocomplete="off">
+        <label class="dropzone" id="dropzone" for="planFile">
+          <input id="planFile" type="file" accept=".md,text/markdown" hidden />
+          <span class="dropzone__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/>
+              <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+            </svg>
+          </span>
+          <span class="dropzone__text" id="fileHint">拖 .md 文件到这里，或点击选择</span>
+        </label>
+
+        <div class="row">
+          <label class="field">
+            <span>计划名 plan_name</span>
+            <input id="planName" type="text" placeholder="留空则用文件名" />
+          </label>
+          <label class="field">
+            <span>trace_id（可选）</span>
+            <input id="traceId" type="text" placeholder="例如 01A1C1F0-DFBD-5D7B" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>plan_info（必填，计划摘要）</span>
+          <textarea id="planInfo" rows="3" placeholder="这份计划要做什么、关键约束是什么"></textarea>
+        </label>
+
+        <label class="field">
+          <span>trace_info（可选，链路/批次信息）</span>
+          <textarea id="traceInfo" rows="2" placeholder="例如 agent=planner; step=3; run=20261110"></textarea>
+        </label>
+
+        <div class="upload__foot">
+          <span class="hint" id="uploadHint">选择 .md 文件后点上传</span>
+          <button class="btn btn--primary" id="uploadBtn" type="submit">上传并入表</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <h2>已上传</h2>
+      <span class="hint" id="listHint">按自增 id 倒序</span>
+    </div>
+
+    <div class="panel panel--flush">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-id">ID</th>
+              <th class="col-doc">计划名</th>
+              <th>trace_id</th>
+              <th>plan_info</th>
+              <th>创建时间</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="planRows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="planEmpty" hidden>
+        <span class="empty__mark">∅</span>
+        <span id="planEmptyText">还没有计划，上传一份试试</span>
+      </p>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+
+{% block foot %}
+<span>oss://{{ bucket }}/{{ prefix }} · Tablestore {{ table }}</span>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='plans.js') }}" defer></script>
+{% endblock %}
