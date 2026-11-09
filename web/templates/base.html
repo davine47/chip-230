@@ -4,15 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
-  <title>{% block title %}chip-230 · Redis 看板{% endblock %}</title>
+  <title>{% block title %}chip-230{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
   <div class="page">
     <header class="topbar">
       <a class="brand" href="/">
-        <span class="brand__mark" aria-hidden="true">R</span>
-        <span class="brand__meta"><strong>chip-230</strong><small>REDIS · 看板</small></span>
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+            <rect x="9.5" y="9.5" width="5" height="5" rx="0.5" fill="currentColor" stroke="none" opacity="0.85"/>
+            <path d="M9 2.5v3M12 2.5v3M15 2.5v3M9 18.5v3M12 18.5v3M15 18.5v3M2.5 9h3M2.5 12h3M2.5 15h3M18.5 9h3M18.5 12h3M18.5 15h3"/>
+          </svg>
+        </span>
+        <span class="brand__meta"><strong>chip-230</strong><small>工作台</small></span>
       </a>
 
       <nav class="nav">

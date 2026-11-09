@@ -1,6 +1,7 @@
 /* ==========================================================================
-   chip-230 看板 · Redis
-   视觉基线沿用 gugugaga：浅色渐变底、白色圆角卡片、顶部彩色渐变条、虚线统计行
+   chip-230 工作台
+   浅色底、白色圆角面板；四个模块各有主色和一种版图纹理（见 tex-*），
+   首页把它们画成一块芯片版图上的功能区，子页面标题区用同色同纹理呼应
    ========================================================================== */
 
 :root {
@@ -82,8 +83,6 @@ code {
   border-radius: 13px;
   display: grid;
   place-items: center;
-  font-size: 18px;
-  font-weight: 700;
   color: #fff;
   background: linear-gradient(140deg, #6484fb, #3f5bd6);
   box-shadow: 0 10px 20px -10px rgba(63, 91, 214, 0.85);
@@ -101,9 +100,8 @@ code {
 }
 
 .brand__meta small {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--muted);
-  letter-spacing: 0.1em;
 }
 
 .nav {
@@ -169,174 +167,268 @@ code {
 }
 
 /* --------------------------------------------------------------------------
-   首屏
+   版图纹理：四个模块各有一种，首页功能区和子页面标题区共用
+   缓存 = SRAM 阵列网格，文档库 = 存储行，davine = 斜线填充，计划 = 标准单元
+   用法：在元素上加 tex-xxx，再在要画纹理的伪元素上写 background: var(--tex)
    -------------------------------------------------------------------------- */
 
-.intro {
-  margin: 46px 0 26px;
+.tex-sram {
+  --tex:
+    repeating-linear-gradient(0deg, currentColor 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 8px);
 }
 
-.eyebrow {
-  margin: 0 0 10px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted);
+.tex-rows {
+  --tex: repeating-linear-gradient(0deg, currentColor 0 2px, transparent 2px 11px);
 }
 
-.intro h1 {
-  margin: 0 0 12px;
-  font-size: 34px;
-  font-weight: 650;
-  line-height: 1.22;
-  letter-spacing: -0.025em;
+.tex-hatch {
+  --tex: repeating-linear-gradient(135deg, currentColor 0 1px, transparent 1px 9px);
 }
 
-.lede {
-  margin: 0;
-  max-width: 64ch;
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: var(--text-soft);
-}
-
-.lede strong {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
+.tex-cells {
+  --tex: repeating-linear-gradient(
+    90deg,
+    currentColor 0 2px,
+    transparent 2px 6px,
+    currentColor 6px 7px,
+    transparent 7px 15px,
+    currentColor 15px 18px,
+    transparent 18px 22px
+  );
 }
 
 /* --------------------------------------------------------------------------
-   卡片（看板入口）
+   首页：四个模块画成一块芯片版图上的功能区
    -------------------------------------------------------------------------- */
 
-.modules {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.module {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 24px;
-  background: var(--surface);
+.die {
+  --pad: #d9dfe9;
+  margin-top: 34px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  text-decoration: none;
-  color: inherit;
-  overflow: hidden;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  border-radius: 14px;
+  background:
+    /* 四周一圈浅色短刻度：焊盘环 */
+    repeating-linear-gradient(90deg, var(--pad) 0 7px, transparent 7px 34px) top 6px left 24px / calc(100% - 48px) 4px no-repeat,
+    repeating-linear-gradient(90deg, var(--pad) 0 7px, transparent 7px 34px) bottom 6px left 24px / calc(100% - 48px) 4px no-repeat,
+    repeating-linear-gradient(180deg, var(--pad) 0 7px, transparent 7px 34px) left 6px top 24px / 4px calc(100% - 48px) no-repeat,
+    repeating-linear-gradient(180deg, var(--pad) 0 7px, transparent 7px 34px) right 6px top 24px / 4px calc(100% - 48px) no-repeat,
+    var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 24px 48px -32px rgba(15, 23, 42, 0.22);
 }
 
-.module::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), transparent 72%);
-}
-
-.module:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
-  box-shadow: var(--shadow-lift);
-}
-
-.module:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.module__icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
+.die__core {
   display: grid;
-  place-items: center;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  grid-template-columns: 1.25fr 1fr 0.85fr;
+  grid-template-rows: auto 1fr 1fr;
+  gap: 14px;
+  min-height: 420px;
+  padding: 18px;
+  border-radius: 8px;
+  /* 功能区之间的走线通道 */
+  background:
+    repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.035) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(90deg, rgba(15, 23, 42, 0.035) 0 1px, transparent 1px 23px),
+    #fbfcfe;
 }
 
-.module__icon svg {
-  width: 22px;
-  height: 22px;
-}
-
-.module h2 {
+.die__mark {
+  grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 2px 0 0;
-  font-size: 20px;
+  justify-content: space-between;
+  padding: 0 2px 4px;
+}
+
+.die__mark h1 {
+  margin: 0;
+  font-size: 34px;
   font-weight: 650;
   letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
 }
 
-.module__name {
-  flex: none;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-soft);
-  letter-spacing: 0;
-}
-
-.module__desc {
-  margin: 0;
-  min-height: 44px;
-  max-width: 46ch;
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--text-soft);
-}
-
-.module__stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding-top: 14px;
-  border-top: 1px dashed var(--border);
-}
-
-.module__stat dt {
-  font-size: 11px;
+.die__mark span {
+  font-size: 12.5px;
   color: var(--muted);
 }
 
-.module__stat dd {
-  margin: 4px 0 0;
-  font-size: 14px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.blk {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  padding: 18px 20px;
+  border-radius: 8px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-decoration: none;
+  color: var(--text);
+  background-color: color-mix(in srgb, var(--c) 8%, #fff);
+  outline: 1px solid color-mix(in srgb, var(--c) 26%, transparent);
+  outline-offset: -1px;
+  transition: background-color 0.15s ease;
 }
 
-.module__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: auto;
-  font-size: 13px;
+.blk:hover {
+  background-color: color-mix(in srgb, var(--c) 13%, #fff);
+}
+
+.blk:focus-visible {
+  outline: 2px solid var(--c);
+  outline-offset: 2px;
+}
+
+.blk::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  color: var(--c);
+  background: var(--tex);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.blk--redis {
+  grid-column: 1;
+  grid-row: 2 / 4;
+}
+
+.blk--redis::before {
+  mask-image: linear-gradient(115deg, transparent 38%, #000 80%);
+}
+
+.blk--docs {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.blk--davine {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.blk--docs::before,
+.blk--davine::before {
+  mask-image: linear-gradient(90deg, transparent 45%, #000 95%);
+}
+
+.blk--plans {
+  grid-column: 3;
+  grid-row: 2 / 4;
+}
+
+.blk--plans::before {
+  mask-image: linear-gradient(180deg, transparent 0 52px, #000 72px, transparent 58%);
+}
+
+.blk__name {
+  position: relative;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--c) 65%, #0f172a);
 }
 
-.module__cta span {
-  transition: transform 0.18s ease;
+.blk__num {
+  position: relative;
+  align-self: end;
+  font-size: 64px;
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
 }
 
-.module:hover .module__cta span {
-  transform: translateX(3px);
+.blk--docs .blk__num,
+.blk--davine .blk__num {
+  font-size: 44px;
 }
 
+.blk__unit {
+  position: relative;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
 
+.blk__sub {
+  position: relative;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* 版图下方：三个库最近的改动 */
+.feed {
+  max-width: 760px;
+  margin-top: 44px;
+}
+
+.feed h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.feed__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.feed__list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 88px;
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0 11px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.feed__list li::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border-radius: 1px;
+  background: var(--c, var(--muted));
+}
+
+.feed__name {
+  overflow: hidden;
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed__name:hover {
+  text-decoration: underline;
+}
+
+.feed__where {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.feed__list time {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed__list .feed__empty {
+  padding-left: 2px;
+  color: var(--muted);
+}
+
+.feed__list .feed__empty::before {
+  display: none;
+}
 
 /* --------------------------------------------------------------------------
    内页
@@ -361,9 +453,33 @@ code {
 }
 
 .board__head {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 16px;
+  padding: 22px 24px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 6%, #fff);
+  outline: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: -1px;
+}
+
+/* 与首页同一块功能区的纹理，只在右侧渐显，不压文字 */
+.board__head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  color: var(--accent);
+  background: var(--tex, none);
+  opacity: 0.14;
+  mask-image: linear-gradient(90deg, transparent 58%, #000 100%);
+  pointer-events: none;
+}
+
+.board__head > * {
+  position: relative;
+  z-index: 1;
 }
 
 .board__icon {
@@ -1200,11 +1316,19 @@ tbody tr:hover {
     padding: 20px 16px 40px;
   }
 
-  .modules {
+  .die__core {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    min-height: 0;
   }
 
-  .intro h1 {
+  .die__core > .blk {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 150px;
+  }
+
+  .die__mark h1 {
     font-size: 28px;
   }
 

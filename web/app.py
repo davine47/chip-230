@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""web/app.py —— chip-230 看板：Redis Key 增删改查 + 实例概览。
+"""web/app.py —— chip-230 工作台：Redis 键空间与实例、文档库、davine、Plan 库。
 
 用法：
     ./.venv/bin/python web/app.py                   # http://127.0.0.1:8080
@@ -87,10 +87,11 @@ def enforce_local_only():
 _client: redis.Redis | None = None
 _instance_cache: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 STATUS_CACHE: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
-DOC_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
-PLAN_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
-DAVINE_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
+DOC_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "count": 0, "latest": []}
+PLAN_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "count": 0, "latest": []}
+DAVINE_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "count": 0, "latest": []}
 DOC_COUNT_TTL = 30
+FEED_LIMIT = 6  # 首页「最近的改动」最多几条
 INSTANCE_TTL = 300  # 秒
 STATUS_TTL_OK = 3
 STATUS_TTL_FAIL = 15
@@ -334,37 +335,86 @@ def inject_globals() -> dict:
 
 @app.get("/")
 def board():
+    boards = (
+        ("文档库", "/documents", "#10b981", document_stats()),
+        ("davine", "/davine", "#0ea5e9", davine_stats()),
+        ("Plan 库", "/plans", "#8b5cf6", plan_stats()),
+    )
+    feed = [
+        {**item, "label": label, "href": href, "color": color}
+        for label, href, color, stats in boards
+        for item in stats["latest"]
+    ]
+    feed.sort(key=lambda item: item["create_time"], reverse=True)
     return render_template(
-        "index.html", docs=document_stats(), davine=davine_stats(), plans=plan_stats()
+        "index.html",
+        docs=boards[0][3],
+        davine=boards[1][3],
+        plans=boards[2][3],
+        feed=feed[:FEED_LIMIT],
+        ago=humanize_ago,
     )
 
 
-def doc_stats(cache: dict, factory) -> dict:
-    """首页卡片用：数量缓存 30 秒，OSS/Tablestore 挂了也不拖垮看板。"""
-    now = time.time()
+def humanize_ago(ms: int) -> str:
+    """把毫秒时间戳说成「3 分钟前」。首页在服务端渲染，省得再为相对时间跑一趟接口。"""
+    if not ms:
+        return "时间未知"
+    minutes = max(0, int((time.time() * 1000 - int(ms)) / 60000))
+    if minutes < 1:
+        return "刚刚"
+    if minutes < 60:
+        return f"{minutes} 分钟前"
+    hours = round(minutes / 60)
+    if hours < 24:
+        return f"{hours} 小时前"
+    return f"{round(hours / 24)} 天前"
+
+
+def _stats(cache: dict, loader, name_key: str) -> dict:
+    """首页卡片用：一次扫描同时得到总量和最近几条，结果缓存 30 秒。
+
+    以前首页先渲染计数（各扫一次），前端再打三个列表接口（又各扫一次），
+    一屏最多扫 6 遍表；现在一次扫描把两件事都办了。
+    """
     if SETTINGS.missing_docstore:
-        return {"ok": False, "count": 0, "error": f"未配置 {'、'.join(SETTINGS.missing_docstore)}"}
-    if now - float(cache["ts"]) < DOC_COUNT_TTL:
-        return {"ok": True, "count": int(cache["value"])}
+        return {
+            "ok": False,
+            "count": 0,
+            "latest": [],
+            "error": f"未配置 {'、'.join(SETTINGS.missing_docstore)}",
+        }
+    now = time.time()
+    cached = cache.get("latest")
+    if now - float(cache["ts"]) < DOC_COUNT_TTL and cached is not None:
+        return {"ok": True, "count": int(cache["count"]), "latest": cached}
     try:
-        count = factory(SETTINGS).count()
-        cache.update(ts=now, value=count)
-        return {"ok": True, "count": count}
+        items = loader()
+        latest = [
+            {
+                "name": item.get(name_key) or "(未命名)",
+                "create_time": int(item.get("create_time") or 0),
+            }
+            for item in items[:FEED_LIMIT]
+        ]
+        cache.update(ts=now, count=len(items), latest=latest)
+        return {"ok": True, "count": len(items), "latest": latest}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "count": 0, "error": str(exc)[:120]}
+        return {"ok": False, "count": 0, "latest": [], "error": str(exc)[:120]}
 
 
 def document_stats() -> dict:
-    return doc_stats(DOC_COUNT_CACHE, docs_service.documents)
+    return _stats(DOC_COUNT_CACHE, lambda: docs_service.documents(SETTINGS).scan()[0], "name")
 
 
 def davine_stats() -> dict:
-    return doc_stats(DAVINE_COUNT_CACHE, docs_service.davine)
+    return _stats(DAVINE_COUNT_CACHE, lambda: docs_service.davine(SETTINGS).scan()[0], "name")
 
 
 DOC_PAGES = {
     "documents": {
         "accent": "#10b981",
+        "texture": "rows",  # 与首页功能区同一种版图纹理
         "title": "文档库",
         "subtitle": "OSS + Tablestore",
         "desc": (
@@ -378,6 +428,7 @@ DOC_PAGES = {
     },
     "davine": {
         "accent": "#0ea5e9",
+        "texture": "hatch",
         "title": "davine",
         "subtitle": "OSS + Tablestore",
         "desc": (
@@ -416,17 +467,7 @@ def davine_page():
 
 
 def plan_stats() -> dict:
-    now = time.time()
-    if SETTINGS.missing_docstore:
-        return {"ok": False, "count": 0, "error": f"未配置 {'、'.join(SETTINGS.missing_docstore)}"}
-    if now - float(PLAN_COUNT_CACHE["ts"]) < DOC_COUNT_TTL:
-        return {"ok": True, "count": int(PLAN_COUNT_CACHE["value"])}
-    try:
-        count = plans_service.count_plans(SETTINGS)
-        PLAN_COUNT_CACHE.update(ts=now, value=count)
-        return {"ok": True, "count": count}
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "count": 0, "error": str(exc)[:120]}
+    return _stats(PLAN_COUNT_CACHE, lambda: plans_service.scan_plans(SETTINGS)[0], "plan_name")
 
 
 @app.get("/plans")
@@ -685,7 +726,7 @@ def register_doc_api(
             PENDING_UPLOADS.discard(upload_id)  # 对象已被删掉，这张凭证也没用了
             raise
         PENDING_UPLOADS.discard(upload_id)
-        cache.update(ts=0.0, value=0)
+        cache["ts"] = 0.0
         return jsonify({"ok": True, "document": doc})
 
     def upload_view():
@@ -722,7 +763,7 @@ def register_doc_api(
             )
         finally:
             os.unlink(tmp.name)
-        cache.update(ts=0.0, value=0)  # 让首页计数下次重新取
+        cache["ts"] = 0.0  # 让首页计数下次重新取
         return jsonify({"ok": True, "document": doc})
 
     def link_view(doc_id: str):
@@ -732,7 +773,7 @@ def register_doc_api(
     def delete_view(doc_id: str):
         require_docstore()
         deleted = factory(SETTINGS).delete(doc_id)
-        cache.update(ts=0.0, value=0)
+        cache["ts"] = 0.0
         if not deleted:
             raise KeyError("文档不存在")
         return jsonify({"ok": True, "id": doc_id})
@@ -832,7 +873,7 @@ def api_plans_upload():
         github_project_url=github_url,
         github_project_branch=github_branch,
     )
-    PLAN_COUNT_CACHE.update(ts=0.0, value=0)
+    PLAN_COUNT_CACHE["ts"] = 0.0
     return jsonify({"ok": True, "plan": plan})
 
 
@@ -849,7 +890,7 @@ def api_plans_link(plan_uuid: str, plan_id: int):
 def api_plans_delete(plan_uuid: str, plan_id: int):
     require_docstore()
     deleted = plans_service.delete_plan(SETTINGS, plan_uuid, plan_id)
-    PLAN_COUNT_CACHE.update(ts=0.0, value=0)
+    PLAN_COUNT_CACHE["ts"] = 0.0
     if not deleted:
         raise KeyError("计划不存在")
     return jsonify({"ok": True})
