@@ -102,6 +102,11 @@ class Settings:
     redis_password: str
     redis_db: int
     redis_ssl: bool
+    # ---------- 对象存储：OSS（跑 scripts/04_oss_demo.py 用）----------
+    oss_bucket: str
+    oss_region: str  # 留空则沿用 region_id
+    oss_endpoint: str  # 留空则按地域自动拼 oss-{region}.aliyuncs.com
+    oss_prefix: str  # 演示对象都写在这个前缀下，方便清理
 
     @property
     def has_access_key(self) -> bool:
@@ -110,6 +115,14 @@ class Settings:
     @property
     def has_redis(self) -> bool:
         return bool(self.redis_host)
+
+    @property
+    def has_oss(self) -> bool:
+        return bool(self.access_key_id and self.access_key_secret)
+
+    @property
+    def oss_region_or_default(self) -> str:
+        return self.oss_region or self.region_id
 
     def masked_ak(self) -> str:
         """打印日志用的脱敏 AccessKey，永远不要把完整 AK 打进日志。"""
@@ -132,4 +145,8 @@ def load_settings() -> Settings:
         redis_password=_env("REDIS_PASSWORD"),
         redis_db=_env_int("REDIS_DB", 0),
         redis_ssl=_env_bool("REDIS_SSL", False),
+        oss_bucket=_env("OSS_BUCKET"),
+        oss_region=_env("OSS_REGION"),
+        oss_endpoint=_env("OSS_ENDPOINT"),
+        oss_prefix=_env("OSS_PREFIX", "chip-230-demo/"),
     )

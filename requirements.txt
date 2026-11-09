@@ -13,3 +13,6 @@ python-dotenv>=1.0
 
 # 看板：Flask（web/ 目录，可选，只跑脚本不需要）
 flask>=3.0
+
+# 对象存储：OSS Python SDK V2（跑 scripts/04_oss_demo.py 用）
+alibabacloud-oss-v2>=0.1

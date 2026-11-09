@@ -204,15 +204,18 @@ chip-230/
 │   ├── config.py                 配置中心：AK 与实例连接信息（.env / 环境变量）
 │   ├── openapi.py                控制面封装：SDK 客户端 + 查询接口 + 错误翻译
 │   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
+│   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
 │   ├── 00_doctor.py              一键自检：依赖 / AK / OpenAPI / Redis 连通性
 │   ├── 01_openapi_list_instances.py  对应文档示例：查询实例列表（--raw 打印原始 JSON）
 │   ├── 02_redis_commands.py      数据面实战：16 类命令族跑一遍（商品页场景）
 │   ├── 03_end2end.py             AK 查实例 → 拿地址 → 连上去读写，完整链路
+│   ├── 04_oss_demo.py            OSS SDK V2：上传 / 下载 / 列举 / 拷贝 / 预签名
 │   └── allow_my_ip.py            把本机出口 IP 加进白名单（IP 变了连不上时跑）
 ├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
 ├── docs/ip-whitelist.md          白名单配置完整步骤（换机器 / IP 变了看这份）
+├── docs/oss-quickstart.md        OSS SDK V2 速查与踩坑记录
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -339,3 +342,33 @@ python scripts/allow_my_ip.py --show   # 只看当前白名单
 
 完整的步骤——控制台怎么点、API 怎么调、规则怎么写、换机器时的检查清单、排查表——
 都整理在 **[docs/ip-whitelist.md](docs/ip-whitelist.md)**，可以脱离本仓库单独照着做。
+
+---
+
+## 八、对象存储 OSS（可选）
+
+Redis 之外，仓库里还带了一份 OSS SDK V2 的示例（`scripts/04_oss_demo.py`），
+和 Redis 那套共用同一个 AccessKey，只是多装一个包。
+
+```bash
+pip install alibabacloud-oss-v2
+
+# 只读：列 bucket、看桶信息、列对象
+python scripts/04_oss_demo.py --list-only
+
+# 完整流程：上传 → head → 读回 → 文件上传/下载 → 列举 → 拷贝 → 预签名 → 删除
+python scripts/04_oss_demo.py
+```
+
+`.env` 里新增这四项（都可留空，有默认行为）：
+
+```bash
+OSS_BUCKET=davine-datanode-std     # 不填则取当前地域第一个 bucket
+OSS_REGION=cn-beijing              # 不填沿用 ALIBABA_CLOUD_REGION_ID
+# OSS_ENDPOINT=oss-cn-beijing.aliyuncs.com
+OSS_PREFIX=chip-230-demo/          # 演示对象都写在这个前缀下
+```
+
+演示只在 `OSS_PREFIX` 下按次生成目录，跑完自动删干净（`--keep` 可保留）。
+接口用法、Result 的两层结构、`presign`、分片上传、最小权限策略这些细节，
+见 **[docs/oss-quickstart.md](docs/oss-quickstart.md)**。
