@@ -175,10 +175,10 @@
     els.uploadHint.textContent = `上传中 ${percent}%`;
   }
 
-  function setWaiting() {
+  function setWaiting(text = "上传完成，正在写入 OSS…") {
     els.progress.hidden = false;
     els.progress.classList.add("progress--waiting");
-    els.uploadHint.textContent = "上传完成，正在写入 OSS…";
+    els.uploadHint.textContent = text;
   }
 
   function resetProgress() {
@@ -187,7 +187,64 @@
     els.progressFill.style.width = "0%";
   }
 
-  // fetch 拿不到上传进度，改用 XHR 的 upload.onprogress
+  async function postJSON(url, payload) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...CSRF },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
+    return data;
+  }
+
+  // 直传：浏览器拿签名 URL 直接 PUT 到 OSS，文件不再经过看板服务器。
+  // 网络层失败（status 0，多半是 bucket 没配 CORS）时 reject 一个 fallback=true 的错误，交给上层退回中转。
+  function putToOss(init, file) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(init.method || "PUT", init.url);
+      Object.entries(init.headers || {}).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          setProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`OSS 拒绝了上传（${xhr.status}）`));
+      };
+      xhr.onerror = () => {
+        const error = new Error("浏览器直传 OSS 失败");
+        error.fallback = true;
+        reject(error);
+      };
+      xhr.ontimeout = xhr.onerror;
+      xhr.send(file);
+    });
+  }
+
+  // 返回上传结果；返回 null 表示这次应该走服务器中转
+  async function uploadDirect(file, category, description) {
+    const init = await postJSON(`${api}/upload-url`, {
+      filename: file.name,
+      size: file.size,
+      category,
+      description,
+    });
+    if (init.mode !== "direct") return null;
+    try {
+      await putToOss(init, file);
+    } catch (error) {
+      if (!error.fallback) throw error;
+      toast("浏览器直传失败（bucket 可能没配 CORS，见 scripts/07_oss_cors.py），改由服务器中转", true);
+      return null;
+    }
+    setWaiting("已传到 OSS，正在写索引…");
+    return postJSON(`${api}/complete`, { upload_id: init.upload_id });
+  }
+
+  // 服务器中转：fetch 拿不到上传进度，改用 XHR 的 upload.onprogress
   function postForm(url, body) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -229,13 +286,16 @@
     els.uploadBtn.disabled = true;
     els.uploadHint.textContent = "上传中…";
 
-    const body = new FormData();
-    body.append("file", picked);
-    body.append("category", category);
-    body.append("description", description);
-
     try {
-      const data = await postForm(`${api}/upload`, body);
+      let data = await uploadDirect(picked, category, description);
+      if (!data) {
+        resetProgress();
+        const body = new FormData();
+        body.append("file", picked);
+        body.append("category", category);
+        body.append("description", description);
+        data = await postForm(`${api}/upload`, body);
+      }
       toast(`已上传 ${data.document.name}`);
       els.form.reset();
       setFile(null);

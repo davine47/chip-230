@@ -175,4 +175,19 @@ done
 ./.venv/bin/python scripts/06_reconcile.py
 ```
 
-审查结论与待办见 `docs/code-review-2026-11-10.md`。
+## 九、上传走浏览器直传（可选，推荐）
+
+文档库 / davine 上传默认让浏览器拿签名地址**直接传到 OSS**，大文件不再经过看板服务器中转。
+前提是 bucket 放行了看板的来源，配一次即可：
+
+```bash
+./.venv/bin/python scripts/07_oss_cors.py            # 只读：看现有规则和将要追加的规则
+./.venv/bin/python scripts/07_oss_cors.py --apply    # 追加规则（保留已有规则）
+# ssh -L 转到了别的本地端口：加 --origin http://localhost:9000 --apply
+```
+
+没配 CORS 也能用：前端会提示"浏览器直传失败"，然后自动改走服务器中转。
+想始终走中转，在 `.env` 里设 `OSS_DIRECT_UPLOAD=0`。
+
+直传没走完（浏览器关了、确认步骤失败）留下的对象，由 `06_reconcile.py` 当作孤儿对象清理。
+

@@ -49,6 +49,7 @@ def install_stubs() -> None:
             "DeleteObjectRequest",
             "ListBucketsRequest",
             "ListObjectsV2Request",
+            "HeadObjectRequest",
         )
     }
     _module("alibabacloud_oss_v2", Client=object, **oss_reqs)

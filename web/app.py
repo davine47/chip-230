@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -40,6 +41,17 @@ SETTINGS = config.load_settings()
 
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # 全局硬上限，各看板另有更小的限制
 DOC_LIMIT_MB = {"documents": 25, "davine": 512}
+PLAN_MAX_BYTES = 5 * 1024 * 1024  # 计划只收 .md，5MB 足够；别沿用 512MB 的全局上限
+MULTIPART_SLACK = 2 * 1024 * 1024  # multipart 表单除文件外的开销，粗筛 Content-Length 时留的余量
+
+# 浏览器直传 OSS：默认开启；bucket 没配 CORS 时前端会自动退回服务器中转。设 0 强制走中转。
+DIRECT_UPLOAD = os.getenv("OSS_DIRECT_UPLOAD", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+DIRECT_UPLOAD_TTL = 2 * 3600  # 发出去的直传凭证多久内有效（秒）
 
 app = Flask(
     __name__,
@@ -85,6 +97,8 @@ STATUS_TTL_FAIL = 15
 STATUS_HARD_TIMEOUT = 3.0  # 秒：探测最长等这么久，绝不把页面拖住
 PROBE = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="redis-probe")
 MAX_KEYS = 200
+SCAN_BATCH = 500  # 每轮 SCAN 的 COUNT
+SCAN_MAX_ROUNDS = 40  # 每次请求最多 SCAN 这么多轮（约 2 万个 Key），稀疏匹配时不至于扫完整个库
 MAX_VALUE_CHARS = redis_ops.MAX_VALUE_CHARS  # 预览上限；超过的值看板只读，见 write_string_key
 LIST_LIMIT = 200  # 列表页最多返回多少条（总数另给）
 
@@ -328,6 +342,8 @@ def board():
 def doc_stats(cache: dict, factory) -> dict:
     """首页卡片用：数量缓存 30 秒，OSS/Tablestore 挂了也不拖垮看板。"""
     now = time.time()
+    if SETTINGS.missing_docstore:
+        return {"ok": False, "count": 0, "error": f"未配置 {'、'.join(SETTINGS.missing_docstore)}"}
     if now - float(cache["ts"]) < DOC_COUNT_TTL:
         return {"ok": True, "count": int(cache["value"])}
     try:
@@ -401,6 +417,8 @@ def davine_page():
 
 def plan_stats() -> dict:
     now = time.time()
+    if SETTINGS.missing_docstore:
+        return {"ok": False, "count": 0, "error": f"未配置 {'、'.join(SETTINGS.missing_docstore)}"}
     if now - float(PLAN_COUNT_CACHE["ts"]) < DOC_COUNT_TTL:
         return {"ok": True, "count": int(PLAN_COUNT_CACHE["value"])}
     try:
@@ -416,6 +434,7 @@ def plans_page():
     return render_template(
         "plans.html",
         stats=plan_stats(),
+        limit_mb=PLAN_MAX_BYTES // 1024 // 1024,
         bucket=SETTINGS.oss_bucket,
         prefix=plans_service.plans_prefix(SETTINGS),
         table=plans_service.TABLE,
@@ -462,10 +481,17 @@ def api_keys():
 
     client = get_client()
     keys: list[str] = []
-    for key in client.scan_iter(match=pattern, count=300):
-        keys.append(key)
-        if len(keys) >= limit:
+    # 手动推进游标并限制轮数：scan_iter 在匹配很稀疏时会一直扫到库尾，大库上请求会被拖很久
+    cursor = max(0, int(request.args.get("cursor", 0)))
+    rounds = 0
+    while True:
+        cursor, batch = client.scan(cursor=cursor, match=pattern, count=SCAN_BATCH)
+        keys.extend(batch)
+        rounds += 1
+        if cursor == 0 or len(keys) >= limit or rounds >= SCAN_MAX_ROUNDS:
             break
+    complete = cursor == 0 and len(keys) <= limit
+    keys = keys[:limit]
 
     rows = []
     if keys:
@@ -484,6 +510,10 @@ def api_keys():
             "total": client.dbsize(),
             "returned": len(rows),
             "pattern": pattern,
+            # complete=False：没扫完（达到条数或轮数上限），可带 cursor=next_cursor 继续
+            "complete": complete,
+            "next_cursor": 0 if complete else cursor,
+            "scanned_rounds": rounds,
         }
     )
 
@@ -538,6 +568,48 @@ def api_delete_key():
     return jsonify({"ok": True, "deleted": deleted, "key": name})
 
 
+def require_docstore() -> None:
+    """文档库 / davine / Plan 库都要 OSS bucket + Tablestore 实例；缺了直接说清楚缺什么。"""
+    missing = SETTINGS.missing_docstore
+    if missing:
+        raise ValueError(f"未配置 {'、'.join(missing)}，请在 .env 里补上后重启看板")
+
+
+class PendingUploads:
+    """发给浏览器的直传凭证：upload_id → {看板, key, 文件名, 分类, 描述}。
+
+    complete 时只认这里登记过的 key，浏览器没法让服务端给任意对象写索引。
+    只存在内存里：看板重启后未完成的直传作废，留下的对象由 06_reconcile.py 清理。
+    """
+
+    def __init__(self, ttl: int):
+        self.ttl = ttl
+        self._items: dict[str, dict] = {}
+        self._lock = threading.Lock()
+
+    def add(self, **entry) -> str:
+        upload_id = uuid.uuid4().hex
+        now = time.time()
+        with self._lock:
+            self._items = {k: v for k, v in self._items.items() if v["expires"] > now}
+            self._items[upload_id] = {**entry, "expires": now + self.ttl}
+        return upload_id
+
+    def get(self, upload_id: str, board: str) -> dict:
+        with self._lock:
+            entry = self._items.get(upload_id)
+        if not entry or entry["board"] != board or entry["expires"] <= time.time():
+            raise KeyError("上传凭证不存在或已过期，请重新上传")
+        return entry
+
+    def discard(self, upload_id: str) -> None:
+        with self._lock:
+            self._items.pop(upload_id, None)
+
+
+PENDING_UPLOADS = PendingUploads(DIRECT_UPLOAD_TTL)
+
+
 def register_doc_api(
     name: str,
     factory,
@@ -546,22 +618,9 @@ def register_doc_api(
     require_description=True,
     max_bytes: int = 25 * 1024 * 1024,
 ):
-    """一块文档看板的 4 个接口：列表 / 上传 / 预签名 / 删除。"""
+    """一块文档看板的接口：列表 / 直传（申请 + 确认）/ 中转上传 / 预签名 / 删除。"""
 
-    def list_view():
-        docs, truncated = factory(SETTINGS).scan()
-        shown = docs[:LIST_LIMIT]
-        return jsonify(
-            {"documents": shown, "count": len(shown), "total": len(docs), "truncated": truncated}
-        )
-
-    def upload_view():
-        file = request.files.get("file")
-        category = (request.form.get("category") or "").strip()
-        description = (request.form.get("description") or "").strip()
-
-        if file is None or not file.filename:
-            raise ValueError("请选择要上传的文件")
+    def check_meta(category: str, description: str) -> None:
         if not category:
             raise ValueError("category 不能为空")
         if require_description and not description:
@@ -569,9 +628,81 @@ def register_doc_api(
         if allowed_categories and category not in allowed_categories:
             raise ValueError(f"category 只能是：{' / '.join(allowed_categories)}")
 
-        # 先按 Content-Length 粗筛，省得白传一遍再被拒
-        if request.content_length and request.content_length > max_bytes + 2 * 1024 * 1024:
+    def list_view():
+        require_docstore()
+        docs, truncated = factory(SETTINGS).scan()
+        shown = docs[:LIST_LIMIT]
+        return jsonify(
+            {"documents": shown, "count": len(shown), "total": len(docs), "truncated": truncated}
+        )
+
+    def direct_init_view():
+        """直传第一步：校验元数据和大小，签发 PUT 地址。OSS_DIRECT_UPLOAD=0 时告诉前端走中转。"""
+        require_docstore()
+        payload = request.get_json(silent=True) or {}
+        filename = str(payload.get("filename") or "").strip()
+        category = str(payload.get("category") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        size = int(payload.get("size") or 0)
+        if not filename:
+            raise ValueError("请选择要上传的文件")
+        check_meta(category, description)
+        if size <= 0:
+            raise ValueError("文件是空的")
+        if size > max_bytes:
             raise ValueError(f"文件超过 {max_bytes // 1024 // 1024}MB 上限")
+        if not DIRECT_UPLOAD:
+            return jsonify({"mode": "relay"})
+
+        info = factory(SETTINGS).prepare_direct_upload(filename)
+        upload_id = PENDING_UPLOADS.add(
+            board=name,
+            key=info["key"],
+            name=info["name"],
+            category=category,
+            description=description,
+        )
+        return jsonify(
+            {
+                "mode": "direct",
+                "upload_id": upload_id,
+                "url": info["url"],
+                "method": info["method"],
+                "headers": info["headers"],
+            }
+        )
+
+    def direct_complete_view():
+        """直传第二步：浏览器 PUT 完成后调用，核对 OSS 上的对象再写索引。"""
+        require_docstore()
+        upload_id = str((request.get_json(silent=True) or {}).get("upload_id") or "")
+        entry = PENDING_UPLOADS.get(upload_id, board=name)
+        try:
+            doc = factory(SETTINGS).complete_direct_upload(
+                entry["name"], entry["key"], entry["category"], entry["description"], max_bytes
+            )
+        except ValueError:
+            PENDING_UPLOADS.discard(upload_id)  # 对象已被删掉，这张凭证也没用了
+            raise
+        PENDING_UPLOADS.discard(upload_id)
+        cache.update(ts=0.0, value=0)
+        return jsonify({"ok": True, "document": doc})
+
+    def upload_view():
+        """服务器中转上传：直传不可用（bucket 没配 CORS 等）时前端退回这里。"""
+        require_docstore()
+        # 先按 Content-Length 粗筛，必须在读 request.files 之前：
+        # 一访问 request.files，Werkzeug 就会把整个请求体收下来落盘，超限也已经白传了一遍
+        if request.content_length and request.content_length > max_bytes + MULTIPART_SLACK:
+            raise ValueError(f"文件超过 {max_bytes // 1024 // 1024}MB 上限")
+
+        file = request.files.get("file")
+        category = (request.form.get("category") or "").strip()
+        description = (request.form.get("description") or "").strip()
+
+        if file is None or not file.filename:
+            raise ValueError("请选择要上传的文件")
+        check_meta(category, description)
 
         # 大文件不能整块读进内存：落到临时文件，再交给 OSS uploader 分片上传
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix)
@@ -595,9 +726,11 @@ def register_doc_api(
         return jsonify({"ok": True, "document": doc})
 
     def link_view(doc_id: str):
+        require_docstore()
         return jsonify({"ok": True, "url": factory(SETTINGS).presign(doc_id)})
 
     def delete_view(doc_id: str):
+        require_docstore()
         deleted = factory(SETTINGS).delete(doc_id)
         cache.update(ts=0.0, value=0)
         if not deleted:
@@ -607,6 +740,18 @@ def register_doc_api(
     app.add_url_rule(f"/api/{name}", f"{name}_list", api_view(list_view), methods=["GET"])
     app.add_url_rule(
         f"/api/{name}/upload", f"{name}_upload", api_view(upload_view), methods=["POST"]
+    )
+    app.add_url_rule(
+        f"/api/{name}/upload-url",
+        f"{name}_upload_url",
+        api_view(direct_init_view),
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        f"/api/{name}/complete",
+        f"{name}_complete",
+        api_view(direct_complete_view),
+        methods=["POST"],
     )
     app.add_url_rule(
         f"/api/{name}/<doc_id>/link", f"{name}_link", api_view(link_view), methods=["POST"]
@@ -635,6 +780,7 @@ register_doc_api(
 @app.get("/api/plans")
 @api_view
 def api_plans_list():
+    require_docstore()
     items, truncated = plans_service.scan_plans(SETTINGS)
     shown = items[:LIST_LIMIT]
     return jsonify(
@@ -645,6 +791,10 @@ def api_plans_list():
 @app.post("/api/plans/upload")
 @api_view
 def api_plans_upload():
+    require_docstore()
+    # 在读 request.files 之前按 Content-Length 粗筛（原因同 upload_view）
+    if request.content_length and request.content_length > PLAN_MAX_BYTES + MULTIPART_SLACK:
+        raise ValueError(f"计划文件超过 {PLAN_MAX_BYTES // 1024 // 1024}MB 上限")
     file = request.files.get("file")
     plan_name = (request.form.get("plan_name") or "").strip()
     plan_info = (request.form.get("plan_info") or "").strip()
@@ -664,11 +814,11 @@ def api_plans_upload():
         raise ValueError("github_project_branch 不能为空")
     github_url = plans_service.validate_repo_url(github_url)  # 拦 javascript: 之类的链接
 
-    data = file.read()
+    data = file.read(PLAN_MAX_BYTES + 1)  # 最多读上限 +1 字节，够判断是否超限，不会整块读进内存
     if not data:
         raise ValueError("文件是空的")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+    if len(data) > PLAN_MAX_BYTES:
+        raise ValueError(f"计划文件超过 {PLAN_MAX_BYTES // 1024 // 1024}MB 上限")
 
     plan = plans_service.save_plan(
         SETTINGS,
@@ -689,6 +839,7 @@ def api_plans_upload():
 @app.post("/api/plans/<plan_uuid>/<int:plan_id>/link")
 @api_view
 def api_plans_link(plan_uuid: str, plan_id: int):
+    require_docstore()
     url = plans_service.presign_plan(SETTINGS, plan_uuid, plan_id)
     return jsonify({"ok": True, "url": url})
 
@@ -696,6 +847,7 @@ def api_plans_link(plan_uuid: str, plan_id: int):
 @app.delete("/api/plans/<plan_uuid>/<int:plan_id>")
 @api_view
 def api_plans_delete(plan_uuid: str, plan_id: int):
+    require_docstore()
     deleted = plans_service.delete_plan(SETTINGS, plan_uuid, plan_id)
     PLAN_COUNT_CACHE.update(ts=0.0, value=0)
     if not deleted:

@@ -230,7 +230,7 @@ class AppTest(unittest.TestCase):
         redis_mod = sys.modules["redis"]
 
         class Client:
-            def scan_iter(self, **kw):
+            def scan(self, **kw):
                 raise redis_mod.ResponseError("ERR unknown command 'SCAN'")
 
         original = self.webapp.get_client

@@ -73,8 +73,8 @@ def main() -> int:
     args = parser.parse_args()
 
     settings = config.load_settings()
-    if not (settings.has_tablestore and settings.oss_bucket):
-        print("[x] 需要在 .env 里配置 AccessKey、OSS_BUCKET 和 OTS_INSTANCE", file=sys.stderr)
+    if not settings.has_docstore:
+        print(f"[x] 需要在 .env 里配置：{'、'.join(settings.missing_docstore)}", file=sys.stderr)
         return 2
 
     client = oss_helper.shared_client(settings)

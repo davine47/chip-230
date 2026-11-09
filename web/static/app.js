@@ -103,7 +103,8 @@
       els.emptyText.textContent = `没有匹配 ${data.pattern} 的 Key`;
       renderRows();
       els.summary.textContent =
-        `共 ${data.total} 个 Key，本次返回 ${data.returned} 个（SCAN 模式 ${data.pattern}）`;
+        `共 ${data.total} 个 Key，本次返回 ${data.returned} 个（SCAN 模式 ${data.pattern}）` +
+        (data.complete === false ? "，库较大只扫了一部分，结果可能不全，请把匹配模式写得更具体" : "");
     } catch (error) {
       state.keys = [];
       renderRows();

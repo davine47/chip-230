@@ -126,7 +126,25 @@ class Settings:
 
     @property
     def has_oss(self) -> bool:
+        """只表示 OSS 凭据齐全。bucket 可以不填：04_oss_demo.py 会用 guess_bucket 自动挑一个。
+        看板的文档库 / Plan 库要求 bucket 必须显式配置，用 has_docstore / missing_docstore。"""
         return bool(self.access_key_id and self.access_key_secret)
+
+    @property
+    def missing_docstore(self) -> list[str]:
+        """文档库 / davine / Plan 库（OSS 存文件 + Tablestore 存索引）缺哪些配置。"""
+        missing = []
+        if not self.has_access_key:
+            missing.append("ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+        if not self.oss_bucket:
+            missing.append("OSS_BUCKET")
+        if not self.ts_instance:
+            missing.append("OTS_INSTANCE")
+        return missing
+
+    @property
+    def has_docstore(self) -> bool:
+        return not self.missing_docstore
 
     @property
     def oss_region_or_default(self) -> str:

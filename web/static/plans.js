@@ -56,9 +56,17 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
+  const PLAN_MAX_MB = 5; // 与服务端 PLAN_MAX_BYTES 保持一致，提前提示，免得白传
+
   function setFile(file) {
     if (file && !file.name.toLowerCase().endsWith(".md")) {
       toast("只接受 .md 文件", true);
+      els.file.value = "";
+      picked = null;
+      return;
+    }
+    if (file && file.size > PLAN_MAX_MB * 1024 * 1024) {
+      toast(`计划文件不能超过 ${PLAN_MAX_MB}MB`, true);
       els.file.value = "";
       picked = null;
       return;

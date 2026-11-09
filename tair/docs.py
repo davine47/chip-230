@@ -37,11 +37,22 @@ _ts = ts_helper.shared_client
 key_from_url = oss_helper.key_from_url
 
 
-def safe_name(filename: str) -> str:
-    """只保留文件名部分，去掉路径分隔符和非法字符（中文保留）。"""
-    name = Path(filename or "").name.strip()
-    name = _BAD_CHARS.sub("_", name)
-    return name[:120] or "unnamed"
+MAX_NAME_CHARS = 120
+
+
+def safe_name(filename: str, limit: int = MAX_NAME_CHARS) -> str:
+    """只保留文件名部分，去掉路径分隔符和非法字符（中文保留）。
+
+    超长时只截文件名主干、保留扩展名：以前直接 [:120]，会把 .pdf 之类截掉，
+    content-type 判断跟着出错，下载回来也打不开。
+    """
+    name = _BAD_CHARS.sub("_", Path(filename or "").name.strip())
+    if len(name) > limit:
+        suffix = Path(name).suffix
+        if len(suffix) > 16:  # 异常长的「后缀」多半不是真后缀，不保留
+            suffix = ""
+        name = name[: limit - len(suffix)].rstrip() + suffix
+    return name or "unnamed"
 
 
 def guess_content_type(filename: str) -> str | None:
@@ -141,6 +152,70 @@ class DocumentStore:
         except Exception:
             # 索引没写进去，对象就是孤儿：看板列不出来、也删不掉，所以立刻回滚
             oss_helper.discard_object(_oss(settings), settings.oss_bucket, key)
+            raise
+
+    # ---------------------------------------------------------------- 浏览器直传
+    def prepare_direct_upload(self, filename: str, hours: int = 1) -> dict[str, Any]:
+        """浏览器直传第一步：定好对象 key，签一个限时的 PUT 地址交给浏览器。
+
+        Content-Type 一定显式指定并参与签名：不指定的话浏览器会按文件类型自己带一个，
+        和签名对不上就是 SignatureDoesNotMatch。浏览器必须原样带上返回的 headers。
+        """
+        settings = self.settings
+        name = safe_name(filename)
+        key = self._unique_key(name)
+        signed = _oss(settings).presign(
+            oss.PutObjectRequest(
+                bucket=settings.oss_bucket,
+                key=key,
+                content_type=guess_content_type(name) or "application/octet-stream",
+            ),
+            expires=timedelta(hours=hours),
+        )
+        headers = {
+            k: v for k, v in (signed.signed_headers or {}).items() if k.lower() != "host"
+        }  # Host 浏览器不允许手动设置
+        return {
+            "name": name,
+            "key": key,
+            "url": signed.url,
+            "method": signed.method or "PUT",
+            "headers": headers,
+        }
+
+    def complete_direct_upload(
+        self, name: str, key: str, category: str, description: str, max_bytes: int
+    ) -> dict[str, Any]:
+        """浏览器直传第二步：确认对象真的在 OSS 上、大小合规，再写索引。
+
+        签名 URL 限制不了上传大小，所以以 OSS 上的实际大小为准；不合规就删掉对象并报错。
+        """
+        settings = self.settings
+        client = _oss(settings)
+        try:
+            head = client.head_object(oss.HeadObjectRequest(bucket=settings.oss_bucket, key=key))
+        except Exception as exc:
+            if "404" in str(exc) or "NoSuchKey" in str(exc):
+                raise ValueError("OSS 上没有找到刚上传的文件，请重新上传") from None
+            raise
+        size = int(getattr(head, "content_length", 0) or 0)
+        if size == 0 or size > max_bytes:
+            oss_helper.discard_object(client, settings.oss_bucket, key)
+            if size == 0:
+                raise ValueError("文件是空的")
+            raise ValueError(f"文件超过 {max_bytes // 1024 // 1024}MB 上限，已删除")
+        try:
+            return self._record(
+                name,
+                oss_helper.object_url(settings, settings.oss_bucket, key),
+                category,
+                description,
+                size,
+                (getattr(head, "etag", "") or "").strip('"'),
+                "",
+            )
+        except Exception:
+            oss_helper.discard_object(client, settings.oss_bucket, key)
             raise
 
     # ---------------------------------------------------------------- 读
