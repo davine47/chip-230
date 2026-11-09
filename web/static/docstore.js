@@ -1,4 +1,4 @@
-/* 文档库：上传 + 列表 */
+/* 文档库系看板（/documents、/davine）：上传 + 列表，接口地址由 data-api 指定 */
 (() => {
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -19,6 +19,9 @@
   };
 
   if (!els.form) return;
+
+  const api = els.form.dataset.api;
+  if (!api) return;
 
   let picked = null;
   let busy = false;
@@ -117,7 +120,7 @@
 
   async function loadDocs() {
     try {
-      const response = await fetch("/api/docs");
+      const response = await fetch(api);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "加载失败");
       renderDocs(data.documents || []);
@@ -132,7 +135,7 @@
   // ---------------------------------------------------------------- 操作
   async function openDoc(id) {
     try {
-      const response = await fetch(`/api/docs/${id}/link`, { method: "POST" });
+      const response = await fetch(`${api}/${id}/link`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "生成链接失败");
       window.open(data.url, "_blank", "noopener");
@@ -144,7 +147,7 @@
   async function removeDoc(doc) {
     if (!window.confirm(`删除「${doc.name}」？索引和 OSS 上的文件都会删掉。`)) return;
     try {
-      const response = await fetch(`/api/docs/${doc.id}`, { method: "DELETE" });
+      const response = await fetch(`${api}/${doc.id}`, { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "删除失败");
       toast(`已删除 ${doc.name}`);
@@ -178,7 +181,7 @@
     body.append("description", description);
 
     try {
-      const response = await fetch("/api/docs/upload", { method: "POST", body });
+      const response = await fetch(`${api}/upload`, { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "上传失败");
       toast(`已上传 ${data.document.name}`);

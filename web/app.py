@@ -52,6 +52,7 @@ _instance_cache: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 STATUS_CACHE: dict[str, object] = {"ts": 0.0, "data": None, "ttl": 0.0}
 DOC_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
 PLAN_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
+DAVINE_COUNT_CACHE: dict[str, object] = {"ts": 0.0, "value": 0}
 DOC_COUNT_TTL = 30
 INSTANCE_TTL = 300  # 秒
 STATUS_TTL_OK = 3
@@ -276,31 +277,81 @@ def inject_globals() -> dict:
 
 @app.get("/")
 def board():
-    return render_template("index.html", docs=document_stats(), plans=plan_stats())
+    return render_template(
+        "index.html", docs=document_stats(), davine=davine_stats(), plans=plan_stats()
+    )
 
 
-def document_stats() -> dict:
-    """首页卡片用：文档数缓存 30 秒，OSS/Tablestore 挂了也不拖垮看板。"""
+def doc_stats(cache: dict, factory) -> dict:
+    """首页卡片用：数量缓存 30 秒，OSS/Tablestore 挂了也不拖垮看板。"""
     now = time.time()
-    if now - float(DOC_COUNT_CACHE["ts"]) < DOC_COUNT_TTL:
-        return {"ok": True, "count": int(DOC_COUNT_CACHE["value"])}
+    if now - float(cache["ts"]) < DOC_COUNT_TTL:
+        return {"ok": True, "count": int(cache["value"])}
     try:
-        count = docs_service.count_documents(SETTINGS)
-        DOC_COUNT_CACHE.update(ts=now, value=count)
+        count = factory(SETTINGS).count()
+        cache.update(ts=now, value=count)
         return {"ok": True, "count": count}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "count": 0, "error": str(exc)[:120]}
 
 
+def document_stats() -> dict:
+    return doc_stats(DOC_COUNT_CACHE, docs_service.documents)
+
+
+def davine_stats() -> dict:
+    return doc_stats(DAVINE_COUNT_CACHE, docs_service.davine)
+
+
+DOC_PAGES = {
+    "documents": {
+        "template": "docstore.html",
+        "accent": "#10b981",
+        "title": "文档库",
+        "subtitle": "OSS + Tablestore",
+        "desc": (
+            "文件上传到 OSS 的 agents/docs/，同时在 Tablestore 的 oss_documents 表里写一行索引"
+            "（文件名、分类、描述、地址、时间）。列表支持「打开」和「删除」。"
+        ),
+        "api": "/api/docs",
+        "nav": "documents",
+    },
+    "davine": {
+        "template": "docstore.html",
+        "accent": "#0ea5e9",
+        "title": "davine",
+        "subtitle": "OSS + Tablestore",
+        "desc": (
+            "和文档库同一套逻辑：文件写到 OSS 的 davine_exchange/，元数据写进 Tablestore 的"
+            " davine_oss_documents 表，字段与文档库完全一致。"
+        ),
+        "api": "/api/davine",
+        "nav": "davine",
+    },
+}
+
+
+def render_doc_page(kind: str, stats: dict):
+    conf = DOC_PAGES[kind]
+    store = (docs_service.documents if kind == "documents" else docs_service.davine)(SETTINGS)
+    return render_template(
+        conf["template"],
+        conf=conf,
+        stats=stats,
+        bucket=SETTINGS.oss_bucket,
+        prefix=store.prefix,
+        table=store.table,
+    )
+
+
 @app.get("/documents")
 def documents_page():
-    return render_template(
-        "documents.html",
-        stats=document_stats(),
-        bucket=SETTINGS.oss_bucket,
-        prefix=docs_service.docs_prefix(SETTINGS),
-        table=SETTINGS.ts_table,
-    )
+    return render_doc_page("documents", document_stats())
+
+
+@app.get("/davine")
+def davine_page():
+    return render_doc_page("davine", davine_stats())
 
 
 def plan_stats() -> dict:
@@ -446,59 +497,64 @@ def api_delete_key():
     return jsonify({"ok": True, "deleted": deleted, "key": name})
 
 
-@app.get("/api/docs")
-@api_view
-def api_docs_list():
-    docs = docs_service.list_documents(SETTINGS)
-    return jsonify({"documents": docs, "count": len(docs)})
+def register_doc_api(name: str, factory, cache: dict):
+    """一块文档看板的 4 个接口：列表 / 上传 / 预签名 / 删除。"""
 
+    def list_view():
+        docs = factory(SETTINGS).list()
+        return jsonify({"documents": docs, "count": len(docs)})
 
-@app.post("/api/docs/upload")
-@api_view
-def api_docs_upload():
-    file = request.files.get("file")
-    category = (request.form.get("category") or "").strip()
-    description = (request.form.get("description") or "").strip()
+    def upload_view():
+        file = request.files.get("file")
+        category = (request.form.get("category") or "").strip()
+        description = (request.form.get("description") or "").strip()
 
-    if file is None or not file.filename:
-        raise ValueError("请选择要上传的文件")
-    if not category:
-        raise ValueError("category 不能为空")
-    if not description:
-        raise ValueError("description 不能为空")
+        if file is None or not file.filename:
+            raise ValueError("请选择要上传的文件")
+        if not category:
+            raise ValueError("category 不能为空")
+        if not description:
+            raise ValueError("description 不能为空")
 
-    data = file.read()
-    if not data:
-        raise ValueError("文件是空的")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+        data = file.read()
+        if not data:
+            raise ValueError("文件是空的")
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
 
-    doc = docs_service.save_document(
-        SETTINGS,
-        filename=file.filename,
-        data=data,
-        category=category,
-        description=description,
+        doc = factory(SETTINGS).save(
+            filename=file.filename,
+            data=data,
+            category=category,
+            description=description,
+        )
+        cache.update(ts=0.0, value=0)  # 让首页计数下次重新取
+        return jsonify({"ok": True, "document": doc})
+
+    def link_view(doc_id: str):
+        return jsonify({"ok": True, "url": factory(SETTINGS).presign(doc_id)})
+
+    def delete_view(doc_id: str):
+        deleted = factory(SETTINGS).delete(doc_id)
+        cache.update(ts=0.0, value=0)
+        if not deleted:
+            raise KeyError("文档不存在")
+        return jsonify({"ok": True, "id": doc_id})
+
+    app.add_url_rule(f"/api/{name}", f"{name}_list", api_view(list_view), methods=["GET"])
+    app.add_url_rule(
+        f"/api/{name}/upload", f"{name}_upload", api_view(upload_view), methods=["POST"]
     )
-    DOC_COUNT_CACHE.update(ts=0.0, value=0)  # 让首页计数下次重新取
-    return jsonify({"ok": True, "document": doc})
+    app.add_url_rule(
+        f"/api/{name}/<doc_id>/link", f"{name}_link", api_view(link_view), methods=["POST"]
+    )
+    app.add_url_rule(
+        f"/api/{name}/<doc_id>", f"{name}_delete", api_view(delete_view), methods=["DELETE"]
+    )
 
 
-@app.post("/api/docs/<doc_id>/link")
-@api_view
-def api_docs_link(doc_id: str):
-    url = docs_service.presign_document(SETTINGS, doc_id)
-    return jsonify({"ok": True, "url": url})
-
-
-@app.delete("/api/docs/<doc_id>")
-@api_view
-def api_docs_delete(doc_id: str):
-    deleted = docs_service.delete_document(SETTINGS, doc_id)
-    DOC_COUNT_CACHE.update(ts=0.0, value=0)
-    if not deleted:
-        raise KeyError("文档不存在")
-    return jsonify({"ok": True, "id": doc_id})
+register_doc_api("docs", docs_service.documents, DOC_COUNT_CACHE)
+register_doc_api("davine", docs_service.davine, DAVINE_COUNT_CACHE)
 
 
 @app.get("/api/plans")

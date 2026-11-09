@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}chip-230 · 文档库{% endblock %}
+{% block title %}chip-230 · {{ conf.title }}{% endblock %}
 
 {% block content %}
-<main class="board" style="--accent: #10b981">
+<main class="board" style="--accent: {{ conf.accent }}">
   <a class="back" href="/"><span aria-hidden="true">←</span> 返回总览</a>
 
   <div class="board__head">
@@ -14,11 +14,8 @@
     </span>
     <div>
       <span class="chip chip--mono">oss://{{ bucket }}/{{ prefix }}</span>
-      <h1>文档库</h1>
-      <p class="board__desc">
-        文件上传到 OSS 的 <code>{{ prefix }}</code> 下，同时在 Tablestore 的
-        <code>oss_documents</code> 表里写一行索引（文件名、分类、描述、地址、时间）。
-      </p>
+      <h1>{{ conf.title }}</h1>
+      <p class="board__desc">{{ conf.desc }}</p>
     </div>
   </div>
 
@@ -29,7 +26,7 @@
     </div>
 
     <div class="panel">
-      <form id="uploadForm" class="upload" autocomplete="off">
+      <form id="uploadForm" class="upload" autocomplete="off" data-api="{{ conf.api }}">
         <label class="dropzone" id="dropzone" for="fileInput">
           <input id="fileInput" type="file" hidden />
           <span class="dropzone__icon" aria-hidden="true">
@@ -98,5 +95,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='docs.js') }}" defer></script>
+<script src="{{ url_for('static', filename='docstore.js') }}" defer></script>
 {% endblock %}

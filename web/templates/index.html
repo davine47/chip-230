@@ -4,7 +4,7 @@
 {% block content %}
 <section class="intro">
   <p class="eyebrow">CHIP-230 BOARD</p>
-  <h1>三块看板：Redis、文档库与 Plan 库</h1>
+  <h1>四块看板：Redis、文档、davine 与 Plan</h1>
   <p class="lede">
     Redis 这边连的是阿里云 Tair（兼容 Redis）实例，当前
     {% if status.ok %}连接正常{% else %}连不上（{{ status.error }}）{% endif %}，
@@ -70,6 +70,25 @@
       <div class="module__stat"><dt>主键</dt><dd>uuid + 自增 id</dd></div>
     </dl>
     <span class="module__cta">进入 Plan 库 <span aria-hidden="true">→</span></span>
+  </a>
+
+  <a class="module" style="--accent: #0ea5e9" href="/davine">
+    <span class="module__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/>
+        <path d="M12 12v9M4 7.5l8 4.5 8-4.5"/>
+      </svg>
+    </span>
+    <h2>davine <span class="module__name">OSS + Tablestore</span></h2>
+    <p class="module__desc">
+      和文档库同一套逻辑：文件放 davine_exchange/，元数据写 davine_oss_documents 表。
+    </p>
+    <dl class="module__stats">
+      <div class="module__stat"><dt>文档数</dt><dd>{{ davine.count if davine.ok else '—' }}</dd></div>
+      <div class="module__stat"><dt>对象存储</dt><dd>OSS</dd></div>
+      <div class="module__stat"><dt>索引</dt><dd>Tablestore</dd></div>
+    </dl>
+    <span class="module__cta">进入 davine <span aria-hidden="true">→</span></span>
   </a>
 </main>
 {% endblock %}

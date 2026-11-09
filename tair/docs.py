@@ -1,11 +1,12 @@
 """文档库：OSS 存文件 + Tablestore 存索引，两边一起用。
 
-上传流程：
-    1. 文件写进 OSS 的 agents/docs/ 前缀下（同名会自动加时间戳）
-    2. 往 Tablestore 的 oss_documents 表插一行元数据（id/name/url/describe/category/create_time）
-    3. 读的时候按 id 查表，需要下载时再生成 OSS 预签名链接（桶是私有的）
-"""
+同一套逻辑服务多个看板，只是前缀和表名不同：
 
+    文档库  /documents   agents/docs/       + oss_documents
+    davine  /davine      davine_exchange/   + davine_oss_documents
+
+上传流程：文件写 OSS → 往表里插一行元数据；读取时按 id 查表，下载时再生成预签名链接。
+"""
 from __future__ import annotations
 
 import re
@@ -17,13 +18,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import alibabacloud_oss_v2 as oss
-from tablestore import (
-    INF_MAX,
-    INF_MIN,
-    Condition,
-    Row,
-    RowExistenceExpectation,
-)
+from tablestore import INF_MAX, INF_MIN, Condition, Row, RowExistenceExpectation
 
 from . import oss as oss_helper
 from . import tablestore as ts_helper
@@ -56,27 +51,11 @@ def key_from_url(url: str) -> str:
     return unquote(urlsplit(url).path.lstrip("/"))
 
 
-def docs_prefix(settings: Settings) -> str:
-    """对象前缀，固定以 / 结尾，默认 agents/docs/。"""
-    raw = (settings.oss_docs_prefix or "agents/docs/").strip()
-    return raw.strip("/") + "/"
-
-
 def safe_name(filename: str) -> str:
     """只保留文件名部分，去掉路径分隔符和非法字符（中文保留）。"""
     name = Path(filename or "").name.strip()
     name = _BAD_CHARS.sub("_", name)
     return name[:120] or "unnamed"
-
-
-def _unique_key(settings: Settings, filename: str) -> str:
-    """同名文件已存在时，加时间戳避免覆盖。"""
-    client = _oss(settings)
-    key = f"{docs_prefix(settings)}{filename}"
-    if not client.is_object_exist(bucket=settings.oss_bucket, key=key):
-        return key
-    stem, suffix = Path(filename).stem, Path(filename).suffix
-    return f"{docs_prefix(settings)}{stem}-{time.strftime('%Y%m%d%H%M%S')}{suffix}"
 
 
 def guess_content_type(filename: str) -> str | None:
@@ -94,110 +73,132 @@ def guess_content_type(filename: str) -> str | None:
     }.get(suffix)
 
 
-def save_document(
-    settings: Settings,
-    filename: str,
-    data: bytes,
-    category: str,
-    description: str,
-) -> dict[str, Any]:
-    """上传到 OSS 并写入索引表，返回这一行的完整字段。"""
-    name = safe_name(filename)
-    key = _unique_key(settings, name)
-    bucket = settings.oss_bucket
+class DocumentStore:
+    """一个「前缀 + 表」的组合，代表一块文档看板的存储。"""
 
-    put = _oss(settings).put_object(
-        oss.PutObjectRequest(
-            bucket=bucket,
-            key=key,
-            body=data,
-            content_type=guess_content_type(name),
+    def __init__(self, settings: Settings, prefix: str, table: str):
+        self.settings = settings
+        self.prefix = (prefix or "").strip("/") + "/"
+        self.table = table
+
+    # ---------------------------------------------------------------- 内部
+    def _unique_key(self, name: str) -> str:
+        client = _oss(self.settings)
+        key = f"{self.prefix}{name}"
+        if not client.is_object_exist(bucket=self.settings.oss_bucket, key=key):
+            return key
+        stem, suffix = Path(name).stem, Path(name).suffix
+        return f"{self.prefix}{stem}-{time.strftime('%Y%m%d%H%M%S')}{suffix}"
+
+    # ---------------------------------------------------------------- 写
+    def save(self, filename: str, data: bytes, category: str, description: str) -> dict[str, Any]:
+        """上传到 OSS 并写入索引表，返回这一行的完整字段。"""
+        settings = self.settings
+        name = safe_name(filename)
+        key = self._unique_key(name)
+        bucket = settings.oss_bucket
+
+        put = _oss(settings).put_object(
+            oss.PutObjectRequest(
+                bucket=bucket,
+                key=key,
+                body=data,
+                content_type=guess_content_type(name),
+            )
         )
-    )
 
-    doc_id = uuid.uuid4().hex
-    now_ms = int(time.time() * 1000)
-    url = oss_helper.object_url(settings, bucket, key)
-    row = Row(
-        [("id", doc_id)],
-        [
-            ("name", name),
-            ("url", url),
-            ("describe", description),
-            ("category", category),
-            ("create_time", now_ms),
-        ],
-    )
-    _ts(settings).put_row(settings.ts_table, row, Condition(RowExistenceExpectation.IGNORE))
+        doc_id = uuid.uuid4().hex
+        now_ms = int(time.time() * 1000)
+        url = oss_helper.object_url(settings, bucket, key)
+        row = Row(
+            [("id", doc_id)],
+            [
+                ("name", name),
+                ("url", url),
+                ("describe", description),
+                ("category", category),
+                ("create_time", now_ms),
+            ],
+        )
+        _ts(settings).put_row(self.table, row, Condition(RowExistenceExpectation.IGNORE))
 
-    return {
-        "id": doc_id,
-        "name": name,
-        "url": url,
-        "describe": description,
-        "category": category,
-        "create_time": now_ms,
-        "size": len(data),
-        "etag": put.etag,
-        "request_id": put.request_id,
-    }
+        return {
+            "id": doc_id,
+            "name": name,
+            "url": url,
+            "describe": description,
+            "category": category,
+            "create_time": now_ms,
+            "size": len(data),
+            "etag": put.etag,
+            "request_id": put.request_id,
+        }
 
+    # ---------------------------------------------------------------- 读
+    def list(self, limit: int = 200) -> list[dict[str, Any]]:
+        """扫全表，按创建时间倒序返回（表上还没建二级索引，量小够用）。"""
+        _, _, rows, _ = _ts(self.settings).get_range(
+            self.table,
+            "FORWARD",
+            [("id", INF_MIN)],
+            [("id", INF_MAX)],
+            columns_to_get=COLUMNS,
+            limit=limit,
+        )
+        docs = []
+        for row in rows or []:
+            item = ts_helper.primary_key_dict(row)
+            item.update(ts_helper.row_to_dict(row))
+            docs.append(item)
+        docs.sort(key=lambda d: d.get("create_time") or 0, reverse=True)
+        return docs
 
-def list_documents(settings: Settings, limit: int = 200) -> list[dict[str, Any]]:
-    """扫全表，按创建时间倒序返回（表上还没建二级索引，量小够用）。"""
-    _, _, rows, _ = _ts(settings).get_range(
-        settings.ts_table,
-        "FORWARD",
-        [("id", INF_MIN)],
-        [("id", INF_MAX)],
-        columns_to_get=COLUMNS,
-        limit=limit,
-    )
-    docs = []
-    for row in rows or []:
+    def get(self, doc_id: str) -> dict[str, Any] | None:
+        _, row, _ = _ts(self.settings).get_row(
+            self.table, [("id", doc_id)], columns_to_get=COLUMNS
+        )
+        if row is None:
+            return None
         item = ts_helper.primary_key_dict(row)
         item.update(ts_helper.row_to_dict(row))
-        docs.append(item)
-    docs.sort(key=lambda d: d.get("create_time") or 0, reverse=True)
-    return docs
+        return item
+
+    def presign(self, doc_id: str, hours: int = 1) -> str:
+        """按 id 生成临时下载链接；桶是私有的，直接给 url 打不开。"""
+        doc = self.get(doc_id)
+        if not doc:
+            raise KeyError("文档不存在")
+        signed = _oss(self.settings).presign(
+            oss.GetObjectRequest(bucket=self.settings.oss_bucket, key=key_from_url(doc["url"])),
+            expires=timedelta(hours=hours),
+        )
+        return signed.url
+
+    # ---------------------------------------------------------------- 删
+    def delete(self, doc_id: str) -> bool:
+        """删索引行 + 删 OSS 对象。"""
+        doc = self.get(doc_id)
+        if not doc:
+            return False
+        _ts(self.settings).delete_row(
+            self.table, [("id", doc_id)], Condition(RowExistenceExpectation.IGNORE)
+        )
+        key = key_from_url(doc.get("url", ""))
+        if key:
+            _oss(self.settings).delete_object(
+                oss.DeleteObjectRequest(bucket=self.settings.oss_bucket, key=key)
+            )
+        return True
+
+    def count(self) -> int:
+        return len(self.list(limit=1000))
 
 
-def get_document(settings: Settings, doc_id: str) -> dict[str, Any] | None:
-    _, row, _ = _ts(settings).get_row(settings.ts_table, [("id", doc_id)], columns_to_get=COLUMNS)
-    if row is None:
-        return None
-    item = ts_helper.primary_key_dict(row)
-    item.update(ts_helper.row_to_dict(row))
-    return item
+def documents(settings: Settings) -> DocumentStore:
+    """文档库看板：agents/docs/ + oss_documents。"""
+    return DocumentStore(settings, settings.oss_docs_prefix, settings.ts_table)
 
 
-def presign_document(settings: Settings, doc_id: str, hours: int = 1) -> str:
-    """按 id 生成临时下载链接；桶是私有的，直接给 url 打不开。"""
-    doc = get_document(settings, doc_id)
-    if not doc:
-        raise KeyError("文档不存在")
-    key = key_from_url(doc["url"])
-    signed = _oss(settings).presign(
-        oss.GetObjectRequest(bucket=settings.oss_bucket, key=key),
-        expires=timedelta(hours=hours),
-    )
-    return signed.url
-
-
-def delete_document(settings: Settings, doc_id: str) -> bool:
-    """删索引行 + 删 OSS 对象。"""
-    doc = get_document(settings, doc_id)
-    if not doc:
-        return False
-    _ts(settings).delete_row(
-        settings.ts_table, [("id", doc_id)], Condition(RowExistenceExpectation.IGNORE)
-    )
-    url = doc.get("url", "")
-    key = key_from_url(url) if url else ""
-    if key:
-        _oss(settings).delete_object(oss.DeleteObjectRequest(bucket=settings.oss_bucket, key=key))
-    return True
-
-
-def count_documents(settings: Settings) -> int:
-    return len(list_documents(settings, limit=1000))
+def davine(settings: Settings) -> DocumentStore:
+    """davine 看板：davine_exchange/ + davine_oss_documents。"""
+    return DocumentStore(settings, settings.oss_davine_prefix, settings.ts_davine_table)

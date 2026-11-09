@@ -206,7 +206,7 @@ chip-230/
 │   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
 │   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
 │   ├── tablestore.py             Tablestore 封装：实例客户端、Row 转 dict
-│   ├── docs.py                   文档库：OSS 上传 + Tablestore 索引（看板用）
+│   ├── docs.py                   文档库：OSS 上传 + Tablestore 索引（documents / davine 共用）
 │   ├── plans.py                  Plan 库：.md 上传 + plans 表（uuid + 自增 id）
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
@@ -287,11 +287,21 @@ WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 | `/redis/instance` | Redis 二级 | 实例信息（OpenAPI）与连接信息，只读 |
 | `/redis/commands` | Redis 二级 | 16 个命令族、版本差异、限制清单 |
 | `/documents` | 顶级 | **文档库**：上传文件到 OSS `agents/docs/`，同时写 Tablestore 索引 |
+| `/davine` | 顶级 | **davine**：同一套逻辑，文件进 `davine_exchange/`，索引写 `davine_oss_documents` |
 | `/plans` | 顶级 | **Plan 库**：只收 `.md`，传 OSS `plans/`，写 Tablestore `plans` 表 |
 
 > 早先的 `/instance`、`/commands` 会 301 跳到 `/redis/` 下对应的新路径。
 
-#### 文档库 `/documents`
+#### 文档库 `/documents` 与 `/davine`
+
+两块看板共用同一套实现（`tair.docs.DocumentStore`），只是「前缀 + 表名」不同：
+
+| 看板 | OSS 前缀 | Tablestore 表 |
+| --- | --- | --- |
+| `/documents` | `agents/docs/` | `oss_documents` |
+| `/davine` | `davine_exchange/` | `davine_oss_documents` |
+
+表结构完全一致：主键 `id`(STRING)，属性列 `name / url / describe / category / create_time`。
 
 上传一次做两件事：
 
@@ -425,7 +435,7 @@ OSS_PREFIX=chip-230-demo/          # 演示对象都写在这个前缀下
 ## 九、表格存储 Tablestore（可选）
 
 `scripts/05_tablestore_demo.py` 演示宽表模型：建表、写入、按主键查、范围扫描、更新、删除。
-表 `oss_documents` 用来索引 OSS 上的文档地址。
+表 `oss_documents` 用来索引 OSS 上的文档地址；`davine_oss_documents` 是 davine 看板用的同构表。
 
 | 列 | 类型 | 角色 |
 | --- | --- | --- |
