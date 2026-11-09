@@ -319,7 +319,7 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 | OSS 路径 | `oss://<bucket>/plans/<plan_name>.md`，重名自动加时间戳 |
 | 表 | Tablestore `plans` |
 | 主键 | `uuid`（STRING，分区键）+ `id`（INTEGER，**自增**） |
-| 属性列 | `plan_name` / `trace_id` / `trace_info` / `plan_info` / `create_time` / `oss_key` |
+| 属性列 | `plan_name` / `trace_id` / `trace_info` / `plan_info` / `create_time` / `oss_url` |
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/plans/upload \
@@ -328,6 +328,8 @@ curl -X POST http://127.0.0.1:8080/api/plans/upload \
 
 > 自增 id 不是 1、2、3，而是**时间型的 16 位整数**（如 `1794257644716000`），
 > 由服务端生成，保证唯一且单调递增，可以直接用来排序。
+>
+> `oss_url` 存完整对象地址；预签名和删除时从 URL 反推 key，计划名带时间戳也不会找错。
 
 Key 管理页的几个细节：
 

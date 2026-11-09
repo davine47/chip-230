@@ -37,7 +37,7 @@ from . import tablestore as ts_helper
 from .config import Settings
 
 TABLE = "plans"
-COLUMNS = ["plan_name", "trace_id", "trace_info", "plan_info", "create_time", "oss_key"]
+COLUMNS = ["plan_name", "trace_id", "trace_info", "plan_info", "create_time", "oss_url"]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 _oss_client = None
@@ -120,8 +120,8 @@ def save_plan(
             ("trace_info", trace_info),
             ("plan_info", plan_info),
             ("create_time", now_ms),
-            # 计划名可能重名（会加时间戳），把真实 key 存下来，取/删才不用猜
-            ("oss_key", key),
+            # 计划名可能重名（会加时间戳），把完整地址存下来，取/删才不用猜
+            ("oss_url", url),
         ],
     )
     _, ret = _ts(settings).put_row(
@@ -183,7 +183,9 @@ def presign_plan(settings: Settings, plan_uuid: str, plan_id: int, hours: int = 
     plan = get_plan(settings, plan_uuid, plan_id)
     if not plan:
         raise KeyError("计划不存在")
-    key = plan.get("oss_key") or f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
+    key = key_from_url(plan.get("oss_url", "")) or (
+        f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
+    )
     signed = _oss(settings).presign(
         oss.GetObjectRequest(bucket=settings.oss_bucket, key=key),
         expires=timedelta(hours=hours),
@@ -200,7 +202,9 @@ def delete_plan(settings: Settings, plan_uuid: str, plan_id: int) -> bool:
         [("uuid", plan_uuid), ("id", plan_id)],
         Condition(RowExistenceExpectation.IGNORE),
     )
-    key = plan.get("oss_key") or f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
+    key = key_from_url(plan.get("oss_url", "")) or (
+        f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
+    )
     if key:
         _oss(settings).delete_object(oss.DeleteObjectRequest(bucket=settings.oss_bucket, key=key))
     return True
