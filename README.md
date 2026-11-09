@@ -335,7 +335,8 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 
 #### Plan 库 `/plans`
 
-只接受 `.md`，要求填 **plan_info**（可选 `plan_name` / `trace_id` / `trace_info`）。
+只接受 `.md`；**github_project_name / github_project_branch 必填**，`plan_info`、`github_project_url`、
+`plan_name`、`trace_id`、`trace_info` 都可选。
 
 | 项 | 值 |
 | --- | --- |
@@ -353,7 +354,8 @@ curl -X POST http://127.0.0.1:8080/api/plans/upload \
   -F "file=@plan.md"
 ```
 
-`github_project_name` 和 `github_project_branch` 必填，`github_project_url` 可选（为空就不写这一列）。
+`github_project_name` 和 `github_project_branch` 必填；`plan_info`、`github_project_url` 可选，
+为空时都不写对应的列，列表里显示 `—`。
 
 > 自增 id 不是 1、2、3，而是**时间型的 16 位整数**（如 `1794257644716000`），
 > 由服务端生成，保证唯一且单调递增，可以直接用来排序。

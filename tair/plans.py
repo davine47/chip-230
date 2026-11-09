@@ -8,7 +8,7 @@
 
 上传约束：
     - 只收 .md 文件
-    - plan_info 必填
+    - plan_info 可选
 """
 
 from __future__ import annotations
@@ -111,14 +111,15 @@ def save_plan(
         ("plan_name", name),
         ("trace_id", trace_id),
         ("trace_info", trace_info),
-        ("plan_info", plan_info),
         ("create_time", now_ms),
         # 计划名可能重名（会加时间戳），把完整地址存下来，取/删才不用猜
         ("oss_url", url),
         ("github_project_name", github_project_name),
         ("github_project_branch", github_project_branch),
     ]
-    # URL 是可选的，空着就不写这一列
+    # 这几个是可选的，空着就不写对应的列
+    if plan_info:
+        attrs.insert(3, ("plan_info", plan_info))
     if github_project_url:
         attrs.append(("github_project_url", github_project_url))
     row = Row([("uuid", doc_uuid), ("id", PK_AUTO_INCR)], attrs)

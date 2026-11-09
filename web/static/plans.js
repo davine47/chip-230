@@ -66,7 +66,7 @@
       return;
     }
     els.fileHint.textContent = `${file.name}  ·  ${humanSize(file.size)}`;
-    els.uploadHint.textContent = "填好 plan_info，然后上传";
+    els.uploadHint.textContent = "填好 GitHub 项目和分支，然后上传";
     if (!els.planName.value) {
       els.planName.placeholder = file.name.replace(/\.md$/i, "");
     }
@@ -191,11 +191,6 @@
       return;
     }
     const planInfo = els.planInfo.value.trim();
-    if (!planInfo) {
-      toast("plan_info 不能为空", true);
-      els.planInfo.focus();
-      return;
-    }
     const githubName = els.githubName.value.trim();
     const githubBranch = els.githubBranch.value.trim();
     if (!githubName || !githubBranch) {

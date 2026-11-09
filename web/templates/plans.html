@@ -21,7 +21,7 @@
         写进 Tablestore 的 <code>{{ table }}</code> 表，按 id 倒序就能看到最新一份。
       </p>
       <p class="board__desc board__desc--sub">
-        只收 <code>.md</code>，<code>plan_info</code> 必填；同名文件会自动加时间戳，不会覆盖旧计划。
+        只收 <code>.md</code>，GitHub 项目与分支必填，<code>plan_info</code> 可选；同名文件会自动加时间戳，不会覆盖旧计划。
         列表里的「打开」走 1 小时有效的预签名链接，桶是私有的，直接点地址打不开。
       </p>
     </div>
@@ -30,7 +30,7 @@
   <section class="section">
     <div class="section__head">
       <h2>上传计划</h2>
-      <span class="hint">仅支持 .md，plan_info 必填，单文件 25MB 以内</span>
+      <span class="hint">仅支持 .md，单文件 25MB 以内，plan_info 可选</span>
     </div>
 
     <div class="panel">
@@ -73,7 +73,7 @@
         </div>
 
         <label class="field">
-          <span>plan_info（必填，计划摘要）</span>
+          <span>plan_info（可选，计划摘要）</span>
           <textarea id="planInfo" rows="3" placeholder="这份计划要做什么、关键约束是什么"></textarea>
         </label>
 

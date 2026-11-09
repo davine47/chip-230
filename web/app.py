@@ -590,8 +590,6 @@ def api_plans_upload():
         raise ValueError("请选择要上传的 .md 文件")
     if not file.filename.lower().endswith(".md"):
         raise ValueError("计划只支持 .md 格式")
-    if not plan_info:
-        raise ValueError("plan_info 不能为空")
     if not github_name:
         raise ValueError("github_project_name 不能为空")
     if not github_branch:
