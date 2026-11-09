@@ -205,6 +205,7 @@ chip-230/
 │   ├── openapi.py                控制面封装：SDK 客户端 + 查询接口 + 错误翻译
 │   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
 │   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
+│   ├── tablestore.py             Tablestore 封装：实例客户端、Row 转 dict
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
 │   ├── 00_doctor.py              一键自检：依赖 / AK / OpenAPI / Redis 连通性
@@ -212,10 +213,12 @@ chip-230/
 │   ├── 02_redis_commands.py      数据面实战：16 类命令族跑一遍（商品页场景）
 │   ├── 03_end2end.py             AK 查实例 → 拿地址 → 连上去读写，完整链路
 │   ├── 04_oss_demo.py            OSS SDK V2：上传 / 下载 / 列举 / 拷贝 / 预签名
+│   ├── 05_tablestore_demo.py     表格存储：建表 / 写入 / 查询 / 扫描 / 更新 / 删除
 │   └── allow_my_ip.py            把本机出口 IP 加进白名单（IP 变了连不上时跑）
 ├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
 ├── docs/ip-whitelist.md          白名单配置完整步骤（换机器 / IP 变了看这份）
 ├── docs/oss-quickstart.md        OSS SDK V2 速查与踩坑记录
+├── docs/tablestore-quickstart.md 表格存储宽表模型速查与踩坑记录
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -372,3 +375,30 @@ OSS_PREFIX=chip-230-demo/          # 演示对象都写在这个前缀下
 演示只在 `OSS_PREFIX` 下按次生成目录，跑完自动删干净（`--keep` 可保留）。
 接口用法、Result 的两层结构、`presign`、分片上传、最小权限策略这些细节，
 见 **[docs/oss-quickstart.md](docs/oss-quickstart.md)**。
+
+---
+
+## 九、表格存储 Tablestore（可选）
+
+`scripts/05_tablestore_demo.py` 演示宽表模型：建表、写入、按主键查、范围扫描、更新、删除。
+表 `oss_documents` 用来索引 OSS 上的文档地址。
+
+| 列 | 类型 | 角色 |
+| --- | --- | --- |
+| `id` | STRING | 主键（分区键），UUID |
+| `name` | STRING | 属性列，文档名 |
+| `url` | STRING | 属性列，OSS 对象地址 |
+| `describe` | STRING | 属性列，描述 |
+| `category` | STRING | 属性列，分类 |
+| `create_time` | INTEGER | 属性列，毫秒时间戳 |
+
+```bash
+python scripts/05_tablestore_demo.py --list     # 只列表和表结构
+python scripts/05_tablestore_demo.py            # 写入 → 读回 → 扫描 → 更新 → 删除
+python scripts/05_tablestore_demo.py --keep     # 保留演示行
+```
+
+实例是**容量型（HYBRID）+ 按量付费**（`ReservedThroughput(0, 0)`），地域 `cn-beijing`。
+
+> 注意：Tablestore 的**第一个主键（分区键）不能自增**，所以 `id` 用了字符串 UUID；
+> 想要整型自增得额外加一个分区键列，详见 [docs/tablestore-quickstart.md](docs/tablestore-quickstart.md)。

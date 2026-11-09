@@ -107,6 +107,10 @@ class Settings:
     oss_region: str  # 留空则沿用 region_id
     oss_endpoint: str  # 留空则按地域自动拼 oss-{region}.aliyuncs.com
     oss_prefix: str  # 演示对象都写在这个前缀下，方便清理
+    # ---------- 表格存储：Tablestore（跑 scripts/05_tablestore_demo.py 用）----------
+    ts_instance: str
+    ts_table: str
+    ts_endpoint: str  # 留空则按 https://{instance}.{region}.ots.aliyuncs.com 拼
 
     @property
     def has_access_key(self) -> bool:
@@ -123,6 +127,16 @@ class Settings:
     @property
     def oss_region_or_default(self) -> str:
         return self.oss_region or self.region_id
+
+    @property
+    def has_tablestore(self) -> bool:
+        return bool(self.access_key_id and self.access_key_secret and self.ts_instance)
+
+    @property
+    def ts_endpoint_or_default(self) -> str:
+        if self.ts_endpoint:
+            return self.ts_endpoint
+        return f"https://{self.ts_instance}.{self.region_id}.ots.aliyuncs.com"
 
     def masked_ak(self) -> str:
         """打印日志用的脱敏 AccessKey，永远不要把完整 AK 打进日志。"""
@@ -149,4 +163,7 @@ def load_settings() -> Settings:
         oss_region=_env("OSS_REGION"),
         oss_endpoint=_env("OSS_ENDPOINT"),
         oss_prefix=_env("OSS_PREFIX", "chip-230-demo/"),
+        ts_instance=_env("OTS_INSTANCE"),
+        ts_table=_env("OTS_TABLE", "oss_documents"),
+        ts_endpoint=_env("OTS_ENDPOINT"),
     )

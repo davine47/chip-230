@@ -1,0 +1,7 @@
+Hello, OSS!
+
+created : 2026-11-10 04:02:48 
+from    : chip-230 / scripts
+bucket  : davine-datanode-std
+
+这是一次对象存储上传测试。

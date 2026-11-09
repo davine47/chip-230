@@ -16,3 +16,9 @@ flask>=3.0
 
 # 对象存储：OSS Python SDK V2（跑 scripts/04_oss_demo.py 用）
 alibabacloud-oss-v2>=0.1
+
+# 表格存储：数据面 SDK（表/行的读写）
+tablestore>=6.4
+
+# 表格存储：控制面 OpenAPI（建实例、查实例）
+alibabacloud_tablestore20201209>=1.0
