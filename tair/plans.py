@@ -36,7 +36,17 @@ from . import tablestore as ts_helper
 from .config import Settings
 
 TABLE = "plans"
-COLUMNS = ["plan_name", "trace_id", "trace_info", "plan_info", "create_time", "oss_url"]
+COLUMNS = [
+    "plan_name",
+    "trace_id",
+    "trace_info",
+    "plan_info",
+    "create_time",
+    "oss_url",
+    "github_project_name",
+    "github_project_url",
+    "github_project_branch",
+]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 _oss = oss_helper.shared_client
@@ -75,6 +85,9 @@ def save_plan(
     trace_id: str,
     trace_info: str,
     plan_info: str,
+    github_project_name: str = "",
+    github_project_url: str = "",
+    github_project_branch: str = "",
 ) -> dict[str, Any]:
     """上传 .md 到 OSS 的 plans/，并往 plans 表插一行。"""
     name = safe_plan_name(plan_name or filename)
@@ -94,18 +107,21 @@ def save_plan(
     now_ms = int(time.time() * 1000)
     url = oss_helper.object_url(settings, bucket, key)
 
-    row = Row(
-        [("uuid", doc_uuid), ("id", PK_AUTO_INCR)],
-        [
-            ("plan_name", name),
-            ("trace_id", trace_id),
-            ("trace_info", trace_info),
-            ("plan_info", plan_info),
-            ("create_time", now_ms),
-            # 计划名可能重名（会加时间戳），把完整地址存下来，取/删才不用猜
-            ("oss_url", url),
-        ],
-    )
+    attrs = [
+        ("plan_name", name),
+        ("trace_id", trace_id),
+        ("trace_info", trace_info),
+        ("plan_info", plan_info),
+        ("create_time", now_ms),
+        # 计划名可能重名（会加时间戳），把完整地址存下来，取/删才不用猜
+        ("oss_url", url),
+        ("github_project_name", github_project_name),
+        ("github_project_branch", github_project_branch),
+    ]
+    # URL 是可选的，空着就不写这一列
+    if github_project_url:
+        attrs.append(("github_project_url", github_project_url))
+    row = Row([("uuid", doc_uuid), ("id", PK_AUTO_INCR)], attrs)
     _, ret = _ts(settings).put_row(
         TABLE,
         row,
@@ -122,6 +138,9 @@ def save_plan(
         "trace_info": trace_info,
         "plan_info": plan_info,
         "create_time": now_ms,
+        "github_project_name": github_project_name,
+        "github_project_url": github_project_url,
+        "github_project_branch": github_project_branch,
         "url": url,
         "size": len(data),
         "etag": put.etag,

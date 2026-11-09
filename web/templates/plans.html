@@ -17,8 +17,8 @@
       <h1>Plan 库</h1>
       <p class="board__desc">
         把 Agent 跑出来的执行计划（Markdown）归档：正文放 OSS 的 <code>{{ prefix }}</code>，
-        元数据（uuid、自增 id、计划名、trace、摘要、地址、时间）写进 Tablestore 的
-        <code>{{ table }}</code> 表，按 id 倒序就能看到最新一份。
+        元数据（uuid、自增 id、计划名、GitHub 项目/分支/地址、trace、摘要、对象地址、时间）
+        写进 Tablestore 的 <code>{{ table }}</code> 表，按 id 倒序就能看到最新一份。
       </p>
       <p class="board__desc board__desc--sub">
         只收 <code>.md</code>，<code>plan_info</code> 必填；同名文件会自动加时间戳，不会覆盖旧计划。
@@ -57,6 +57,21 @@
           </label>
         </div>
 
+        <div class="row row--equal">
+          <label class="field">
+            <span>GitHub 项目 github_project_name</span>
+            <input id="githubName" type="text" placeholder="例如 chip-230" required />
+          </label>
+          <label class="field">
+            <span>分支 github_project_branch</span>
+            <input id="githubBranch" type="text" placeholder="例如 main" required />
+          </label>
+          <label class="field">
+            <span>项目地址 github_project_url（可选）</span>
+            <input id="githubUrl" type="text" placeholder="https://github.com/owner/repo" />
+          </label>
+        </div>
+
         <label class="field">
           <span>plan_info（必填，计划摘要）</span>
           <textarea id="planInfo" rows="3" placeholder="这份计划要做什么、关键约束是什么"></textarea>
@@ -83,11 +98,12 @@
 
     <div class="panel panel--flush">
       <div class="table-wrap">
-        <table>
+        <table class="table--plans">
           <thead>
             <tr>
               <th class="col-id">ID</th>
               <th class="col-doc">计划名</th>
+              <th>GitHub 项目</th>
               <th>trace_id</th>
               <th>plan_info</th>
               <th>创建时间</th>

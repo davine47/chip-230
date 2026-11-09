@@ -8,6 +8,9 @@
     fileHint: $("fileHint"),
     planName: $("planName"),
     traceId: $("traceId"),
+    githubName: $("githubName"),
+    githubBranch: $("githubBranch"),
+    githubUrl: $("githubUrl"),
     traceInfo: $("traceInfo"),
     planInfo: $("planInfo"),
     uploadBtn: $("uploadBtn"),
@@ -89,8 +92,27 @@
       nameCell.className = "cell-key";
       nameCell.textContent = plan.plan_name || "(未命名)";
 
+      const ghCell = document.createElement("td");
+      ghCell.className = "cell-gh";
+      if (plan.github_project_name) {
+        const repo = document.createElement(plan.github_project_url ? "a" : "span");
+        repo.textContent = plan.github_project_name;
+        if (plan.github_project_url) {
+          repo.href = plan.github_project_url;
+          repo.target = "_blank";
+          repo.rel = "noopener";
+        }
+        const branch = document.createElement("span");
+        branch.className = "tag tag--branch";
+        branch.textContent = plan.github_project_branch || "-";
+        ghCell.append(repo, branch);
+      } else {
+        ghCell.className = "muted";
+        ghCell.textContent = "—";
+      }
+
       const traceCell = document.createElement("td");
-      traceCell.className = "mono muted";
+      traceCell.className = "mono muted cell-nowrap";
       traceCell.textContent = plan.trace_id || "—";
 
       const infoCell = document.createElement("td");
@@ -98,6 +120,7 @@
       infoCell.textContent = plan.plan_info || "—";
 
       const timeCell = document.createElement("td");
+      timeCell.className = "cell-nowrap";
       timeCell.textContent = timeText(plan.create_time);
 
       const actions = document.createElement("td");
@@ -116,7 +139,7 @@
       del.addEventListener("click", () => removePlan(plan));
 
       actions.append(open, del);
-      tr.append(idCell, nameCell, traceCell, infoCell, timeCell, actions);
+      tr.append(idCell, nameCell, ghCell, traceCell, infoCell, timeCell, actions);
       els.rows.append(tr);
     });
   }
@@ -173,6 +196,13 @@
       els.planInfo.focus();
       return;
     }
+    const githubName = els.githubName.value.trim();
+    const githubBranch = els.githubBranch.value.trim();
+    if (!githubName || !githubBranch) {
+      toast("GitHub 项目和分支都要填", true);
+      (!githubName ? els.githubName : els.githubBranch).focus();
+      return;
+    }
 
     busy = true;
     els.uploadBtn.disabled = true;
@@ -184,6 +214,9 @@
     body.append("plan_info", planInfo);
     body.append("trace_id", els.traceId.value.trim());
     body.append("trace_info", els.traceInfo.value.trim());
+    body.append("github_project_name", githubName);
+    body.append("github_project_branch", githubBranch);
+    body.append("github_project_url", els.githubUrl.value.trim());
 
     try {
       const response = await fetch("/api/plans/upload", { method: "POST", body });

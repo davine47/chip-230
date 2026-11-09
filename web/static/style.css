@@ -705,6 +705,12 @@ tbody tr:hover {
   flex: 1;
 }
 
+.row--equal > .field,
+.row--equal > .field:last-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 /* --------------------------------------------------------------------------
    按钮
    -------------------------------------------------------------------------- */
@@ -951,6 +957,50 @@ tbody tr:hover {
 
 .col-id {
   width: 90px;
+}
+
+.table--plans {
+  min-width: 1040px;
+}
+
+/* 列多，给关键列定个宽度，别让 plan_info 被挤成一条 */
+.table--plans th:nth-child(2) {
+  width: 18%;
+}
+
+.table--plans th:nth-child(3) {
+  width: 15%;
+}
+
+.table--plans th:nth-child(4) {
+  width: 13%;
+}
+
+.table--plans th:nth-child(5) {
+  width: 22%;
+}
+
+.table--plans th:nth-child(6) {
+  width: 12%;
+}
+
+.cell-nowrap {
+  white-space: nowrap;
+}
+
+.cell-gh a {
+  color: #3f5bd6;
+  text-decoration: none;
+}
+
+.cell-gh a:hover {
+  text-decoration: underline;
+}
+
+.tag--branch {
+  margin-left: 6px;
+  font-size: 10.5px;
+  color: var(--text-soft);
 }
 
 /* --------------------------------------------------------------------------

@@ -342,12 +342,18 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 | OSS 路径 | `oss://<bucket>/plans/<plan_name>.md`，重名自动加时间戳 |
 | 表 | Tablestore `plans` |
 | 主键 | `uuid`（STRING，分区键）+ `id`（INTEGER，**自增**） |
-| 属性列 | `plan_name` / `trace_id` / `trace_info` / `plan_info` / `create_time` / `oss_url` |
+| 属性列 | `plan_name` / `trace_id` / `trace_info` / `plan_info` / `create_time` / `oss_url` / `github_project_name` / `github_project_url` / `github_project_branch` |
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/plans/upload \
-  -F "file=@plan.md" -F "plan_info=计划摘要" -F "trace_id=TRACE-1"
+  --form-string "plan_info=计划摘要" \
+  --form-string "github_project_name=chip-230" \
+  --form-string "github_project_branch=main" \
+  --form-string "github_project_url=https://github.com/davine47/chip-230" \
+  -F "file=@plan.md"
 ```
+
+`github_project_name` 和 `github_project_branch` 必填，`github_project_url` 可选（为空就不写这一列）。
 
 > 自增 id 不是 1、2、3，而是**时间型的 16 位整数**（如 `1794257644716000`），
 > 由服务端生成，保证唯一且单调递增，可以直接用来排序。

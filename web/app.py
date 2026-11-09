@@ -582,6 +582,9 @@ def api_plans_upload():
     plan_info = (request.form.get("plan_info") or "").strip()
     trace_id = (request.form.get("trace_id") or "").strip()
     trace_info = (request.form.get("trace_info") or "").strip()
+    github_name = (request.form.get("github_project_name") or "").strip()
+    github_url = (request.form.get("github_project_url") or "").strip()
+    github_branch = (request.form.get("github_project_branch") or "").strip()
 
     if file is None or not file.filename:
         raise ValueError("请选择要上传的 .md 文件")
@@ -589,6 +592,10 @@ def api_plans_upload():
         raise ValueError("计划只支持 .md 格式")
     if not plan_info:
         raise ValueError("plan_info 不能为空")
+    if not github_name:
+        raise ValueError("github_project_name 不能为空")
+    if not github_branch:
+        raise ValueError("github_project_branch 不能为空")
 
     data = file.read()
     if not data:
@@ -604,6 +611,9 @@ def api_plans_upload():
         trace_id=trace_id,
         trace_info=trace_info,
         plan_info=plan_info,
+        github_project_name=github_name,
+        github_project_url=github_url,
+        github_project_branch=github_branch,
     )
     PLAN_COUNT_CACHE.update(ts=0.0, value=0)
     return jsonify({"ok": True, "plan": plan})
