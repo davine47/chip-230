@@ -3,6 +3,8 @@
 > 参照两篇官方文档整理：
 > 1. [命令支持范围与使用限制](https://help.aliyun.com/zh/redis/developer-reference/commands-supported-by-apsaradb-for-redis-community-edition) —— **数据面**：连上实例后能发哪些命令
 > 2. [Python SDK 集成示例](https://help.aliyun.com/zh/redis/developer-reference/call-the-apsaradb-for-redis-api-by-using-alibaba-cloud-sdk-for-python) —— **控制面**：用 AccessKey 调 OpenAPI 管实例
+>
+> 项目内的速查：[白名单](docs/ip-whitelist.md) · [OSS SDK](docs/oss-quickstart.md) · [Tablestore](docs/tablestore-quickstart.md)
 
 这两篇讲的其实是同一套东西的两个层面，实际项目里要配合使用：
 
@@ -201,12 +203,13 @@ for ins in response.body.instances:
 ```
 chip-230/
 ├── tair/                         公共库（脚本和看板共用）
-│   ├── config.py                 配置中心：AK 与实例连接信息（.env / 环境变量）
+│   ├── __init__.py
+│   ├── config.py                 配置中心：AK 与各云资源连接信息（.env / 环境变量）
 │   ├── openapi.py                控制面封装：SDK 客户端 + 查询接口 + 错误翻译
 │   ├── redis_conn.py             数据面封装：连接池、TLS、超时、健康检查
 │   ├── oss.py                    OSS 封装：客户端、bucket 选择、对象地址
 │   ├── tablestore.py             Tablestore 封装：实例客户端、Row 转 dict
-│   ├── docs.py                   文档库：OSS 上传 + Tablestore 索引（documents / davine 共用）
+│   ├── docs.py                   文档库：OSS 上传 + 索引（documents / davine 共用）
 │   ├── plans.py                  Plan 库：.md 上传 + plans 表（uuid + 自增 id）
 │   └── console.py                终端输出对齐小工具
 ├── scripts/                      命令行示例
@@ -217,10 +220,14 @@ chip-230/
 │   ├── 04_oss_demo.py            OSS SDK V2：上传 / 下载 / 列举 / 拷贝 / 预签名
 │   ├── 05_tablestore_demo.py     表格存储：建表 / 写入 / 查询 / 扫描 / 更新 / 删除
 │   └── allow_my_ip.py            把本机出口 IP 加进白名单（IP 变了连不上时跑）
-├── web/                          看板（Flask）：总览 / Key 管理 / 实例 / 命令
-├── docs/ip-whitelist.md          白名单配置完整步骤（换机器 / IP 变了看这份）
-├── docs/oss-quickstart.md        OSS SDK V2 速查与踩坑记录
-├── docs/tablestore-quickstart.md 表格存储宽表模型速查与踩坑记录
+├── web/                          看板（Flask）
+│   ├── app.py                    页面路由 + JSON 接口
+│   ├── templates/                base / index / redis / instance / commands / docstore / plans
+│   └── static/                   style.css / app.js / docstore.js / plans.js
+├── docs/                         三份速查文档
+│   ├── ip-whitelist.md           白名单配置完整步骤
+│   ├── oss-quickstart.md         OSS SDK V2 速查与踩坑
+│   └── tablestore-quickstart.md  表格存储宽表模型速查与踩坑
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
 ├── .env.template                 配置模板（复制成 .env 再填，模板里不含真实密钥）
@@ -278,7 +285,8 @@ python scripts/03_end2end.py               # 端到端：查实例 → 连接 �
 WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 ```
 
-只有一个顶级看板，点进去是 Redis 的二级看板（内部三个子页，用子导航切换）：
+首页四张卡片：**Redis**、**文档库**、**davine**、**Plan 库**。
+Redis 点进去是二级看板（键空间 / 实例 / 命令，用子导航切换），其余三块各自是一个独立页面。
 
 | 路径 | 层级 | 内容 |
 | --- | --- | --- |
