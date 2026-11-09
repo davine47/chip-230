@@ -421,13 +421,10 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-.feed__list .feed__empty {
-  padding-left: 2px;
+.feed__empty {
+  margin: 0;
+  padding: 14px 0 0 18px;
   color: var(--muted);
-}
-
-.feed__list .feed__empty::before {
-  display: none;
 }
 
 /* --------------------------------------------------------------------------
