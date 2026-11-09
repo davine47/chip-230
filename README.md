@@ -303,6 +303,9 @@ WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 
 表结构完全一致：主键 `id`(STRING)，属性列 `name / url / describe / category / create_time`。
 
+两块的差别只在 `category`：文档库是自由输入，davine 是固定下拉
+（`others / paper / books / agents`），后端也按这个枚举校验。
+
 上传一次做两件事：
 
 1. 文件写进 OSS：`oss://<bucket>/agents/docs/<文件名>`（同名自动加时间戳，不覆盖）

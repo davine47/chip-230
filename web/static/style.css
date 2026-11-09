@@ -641,6 +641,11 @@ tbody tr:hover {
   width: 120px;
 }
 
+/* 分类下拉固定宽度，别被下面的描述框挤窄 */
+.field--cat {
+  flex: 0 0 190px;
+}
+
 .field input,
 .field select,
 .field textarea {

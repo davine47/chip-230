@@ -315,6 +315,7 @@ DOC_PAGES = {
         ),
         "api": "/api/docs",
         "nav": "documents",
+        "categories": None,
     },
     "davine": {
         "template": "docstore.html",
@@ -327,6 +328,7 @@ DOC_PAGES = {
         ),
         "api": "/api/davine",
         "nav": "davine",
+        "categories": ["others", "paper", "books", "agents"],
     },
 }
 
@@ -497,7 +499,7 @@ def api_delete_key():
     return jsonify({"ok": True, "deleted": deleted, "key": name})
 
 
-def register_doc_api(name: str, factory, cache: dict):
+def register_doc_api(name: str, factory, cache: dict, allowed_categories=None):
     """一块文档看板的 4 个接口：列表 / 上传 / 预签名 / 删除。"""
 
     def list_view():
@@ -515,6 +517,8 @@ def register_doc_api(name: str, factory, cache: dict):
             raise ValueError("category 不能为空")
         if not description:
             raise ValueError("description 不能为空")
+        if allowed_categories and category not in allowed_categories:
+            raise ValueError(f"category 只能是：{' / '.join(allowed_categories)}")
 
         data = file.read()
         if not data:
@@ -554,7 +558,9 @@ def register_doc_api(name: str, factory, cache: dict):
 
 
 register_doc_api("docs", docs_service.documents, DOC_COUNT_CACHE)
-register_doc_api("davine", docs_service.davine, DAVINE_COUNT_CACHE)
+register_doc_api(
+    "davine", docs_service.davine, DAVINE_COUNT_CACHE, DOC_PAGES["davine"]["categories"]
+)
 
 
 @app.get("/api/plans")

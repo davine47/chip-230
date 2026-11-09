@@ -39,10 +39,19 @@
         </label>
 
         <div class="row">
-          <label class="field">
+          <label class="field field--cat">
             <span>分类 category</span>
+            {% if conf.categories %}
+            <select id="category" required>
+              <option value="" disabled selected>请选择分类</option>
+              {% for item in conf.categories %}
+              <option value="{{ item }}">{{ item }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
             <input id="category" type="text" list="categoryList" placeholder="例如：notes / spec / recipe" required />
             <datalist id="categoryList"></datalist>
+            {% endif %}
           </label>
           <label class="field">
             <span>描述 description</span>

@@ -68,14 +68,16 @@
     els.empty.hidden = docs.length > 0;
     els.listHint.textContent = docs.length ? `共 ${docs.length} 份，按创建时间倒序` : "暂无文档";
 
-    const categories = new Set(docs.map((d) => d.category).filter(Boolean));
-    els.categoryList.replaceChildren(
-      ...[...categories].map((name) => {
-        const option = document.createElement("option");
-        option.value = name;
-        return option;
-      })
-    );
+    if (els.categoryList) {
+      const categories = new Set(docs.map((d) => d.category).filter(Boolean));
+      els.categoryList.replaceChildren(
+        ...[...categories].map((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          return option;
+        })
+      );
+    }
 
     docs.forEach((doc) => {
       const tr = document.createElement("tr");
