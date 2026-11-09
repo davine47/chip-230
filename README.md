@@ -303,8 +303,10 @@ WEB_PORT=8090 ./.venv/bin/python web/app.py   # 换端口
 
 表结构完全一致：主键 `id`(STRING)，属性列 `name / url / describe / category / create_time`。
 
-两块的差别只在 `category`：文档库是自由输入，davine 是固定下拉
-（`others / paper / books / agents`），后端也按这个枚举校验。
+两块的差别：
+
+- `category`：文档库自由输入；davine 是固定下拉（`others / paper / books / agents`），后端按枚举校验
+- `description`：文档库必填；davine 可选（不填就不写这一列，列表里显示 `-`）
 
 上传一次做两件事：
 

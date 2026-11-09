@@ -168,8 +168,8 @@
     }
     const category = els.category.value.trim();
     const description = els.description.value.trim();
-    if (!category || !description) {
-      toast("分类和描述都要填", true);
+    if (!category || (els.description.required && !description)) {
+      toast(els.description.required ? "分类和描述都要填" : "请选择分类", true);
       return;
     }
 

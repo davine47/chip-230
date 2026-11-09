@@ -7,6 +7,7 @@
 
 上传流程：文件写 OSS → 往表里插一行元数据；读取时按 id 查表，下载时再生成预签名链接。
 """
+
 from __future__ import annotations
 
 import re
@@ -110,16 +111,11 @@ class DocumentStore:
         doc_id = uuid.uuid4().hex
         now_ms = int(time.time() * 1000)
         url = oss_helper.object_url(settings, bucket, key)
-        row = Row(
-            [("id", doc_id)],
-            [
-                ("name", name),
-                ("url", url),
-                ("describe", description),
-                ("category", category),
-                ("create_time", now_ms),
-            ],
-        )
+        attrs = [("name", name), ("url", url)]
+        if description:  # 描述可选：空字符串就不写这一列
+            attrs.append(("describe", description))
+        attrs += [("category", category), ("create_time", now_ms)]
+        row = Row([("id", doc_id)], attrs)
         _ts(settings).put_row(self.table, row, Condition(RowExistenceExpectation.IGNORE))
 
         return {
@@ -154,9 +150,7 @@ class DocumentStore:
         return docs
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
-        _, row, _ = _ts(self.settings).get_row(
-            self.table, [("id", doc_id)], columns_to_get=COLUMNS
-        )
+        _, row, _ = _ts(self.settings).get_row(self.table, [("id", doc_id)], columns_to_get=COLUMNS)
         if row is None:
             return None
         item = ts_helper.primary_key_dict(row)
