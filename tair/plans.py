@@ -19,7 +19,6 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
 
 import alibabacloud_oss_v2 as oss
 from tablestore import (
@@ -40,31 +39,14 @@ TABLE = "plans"
 COLUMNS = ["plan_name", "trace_id", "trace_info", "plan_info", "create_time", "oss_url"]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
-_oss_client = None
-_ts_client = None
-
-
-def _oss(settings: Settings):
-    global _oss_client
-    if _oss_client is None:
-        _oss_client = oss_helper.build_client(settings)
-    return _oss_client
-
-
-def _ts(settings: Settings):
-    global _ts_client
-    if _ts_client is None:
-        _ts_client = ts_helper.build_client(settings)
-    return _ts_client
+_oss = oss_helper.shared_client
+_ts = ts_helper.shared_client
+key_from_url = oss_helper.key_from_url
 
 
 def plans_prefix(settings: Settings) -> str:
     raw = (settings.oss_plans_prefix or "plans/").strip()
     return raw.strip("/") + "/"
-
-
-def key_from_url(url: str) -> str:
-    return unquote(urlsplit(url).path.lstrip("/"))
 
 
 def safe_plan_name(name: str) -> str:

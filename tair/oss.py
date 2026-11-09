@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
 import alibabacloud_oss_v2 as oss
 
@@ -28,6 +28,21 @@ def build_client(settings: Settings) -> oss.Client:
     config.connect_timeout = 5000  # 毫秒
     config.readwrite_timeout = 30000  # 毫秒，上传下载大对象时别太短
     return oss.Client(config)
+
+
+_SHARED: list = []
+
+
+def shared_client(settings: Settings) -> oss.Client:
+    """进程内复用的客户端，别每个请求都重新建连接池。"""
+    if not _SHARED:
+        _SHARED.append(build_client(settings))
+    return _SHARED[0]
+
+
+def key_from_url(url: str) -> str:
+    """从对象地址反推 key（URL 里的中文/空格是百分号编码的，要还原）。"""
+    return unquote(urlsplit(url).path.lstrip("/"))
 
 
 def bucket_names(client: oss.Client) -> list[dict]:

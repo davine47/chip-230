@@ -305,7 +305,6 @@ def davine_stats() -> dict:
 
 DOC_PAGES = {
     "documents": {
-        "template": "docstore.html",
         "accent": "#10b981",
         "title": "文档库",
         "subtitle": "OSS + Tablestore",
@@ -314,12 +313,10 @@ DOC_PAGES = {
             "（文件名、分类、描述、地址、时间）。列表支持「打开」和「删除」。"
         ),
         "api": "/api/docs",
-        "nav": "documents",
         "categories": None,
         "desc_required": True,
     },
     "davine": {
-        "template": "docstore.html",
         "accent": "#0ea5e9",
         "title": "davine",
         "subtitle": "OSS + Tablestore",
@@ -328,7 +325,6 @@ DOC_PAGES = {
             " davine_oss_documents 表，字段与文档库完全一致。"
         ),
         "api": "/api/davine",
-        "nav": "davine",
         "categories": ["others", "paper", "books", "agents"],
         "desc_required": False,
     },
@@ -339,7 +335,7 @@ def render_doc_page(kind: str, stats: dict):
     conf = DOC_PAGES[kind]
     store = (docs_service.documents if kind == "documents" else docs_service.davine)(SETTINGS)
     return render_template(
-        conf["template"],
+        "docstore.html",
         conf=conf,
         stats=stats,
         bucket=SETTINGS.oss_bucket,

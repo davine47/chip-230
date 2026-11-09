@@ -16,7 +16,6 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
 
 import alibabacloud_oss_v2 as oss
 from tablestore import INF_MAX, INF_MIN, Condition, Row, RowExistenceExpectation
@@ -28,28 +27,9 @@ from .config import Settings
 COLUMNS = ["name", "url", "describe", "category", "create_time"]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
-# 客户端建一次就复用，别每个请求都重新握手
-_oss_client = None
-_ts_client = None
-
-
-def _oss(settings: Settings):
-    global _oss_client
-    if _oss_client is None:
-        _oss_client = oss_helper.build_client(settings)
-    return _oss_client
-
-
-def _ts(settings: Settings):
-    global _ts_client
-    if _ts_client is None:
-        _ts_client = ts_helper.build_client(settings)
-    return _ts_client
-
-
-def key_from_url(url: str) -> str:
-    """从对象地址反推 OSS key（URL 里的中文/空格是百分号编码的，要还原）。"""
-    return unquote(urlsplit(url).path.lstrip("/"))
+_oss = oss_helper.shared_client
+_ts = ts_helper.shared_client
+key_from_url = oss_helper.key_from_url
 
 
 def safe_name(filename: str) -> str:

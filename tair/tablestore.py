@@ -25,6 +25,16 @@ def build_client(settings: Settings) -> OTSClient:
     )
 
 
+_SHARED: list = []
+
+
+def shared_client(settings: Settings):
+    """进程内复用的客户端。"""
+    if not _SHARED:
+        _SHARED.append(build_client(settings))
+    return _SHARED[0]
+
+
 def row_to_dict(row) -> dict:
     """把 SDK 的 Row 转成普通 dict。
 
