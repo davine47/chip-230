@@ -397,6 +397,15 @@ code {
   color: var(--text-soft);
 }
 
+.board__desc + .board__desc {
+  margin-top: 8px;
+}
+
+.board__desc--sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* Redis 二级看板的子导航 */
 .subnav {
   display: inline-flex;

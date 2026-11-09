@@ -16,9 +16,13 @@
       <span class="chip chip--mono">oss://{{ bucket }}/{{ prefix }}</span>
       <h1>Plan 库</h1>
       <p class="board__desc">
-        计划文件只收 <code>.md</code>，上传后写进 OSS 的 <code>{{ prefix }}</code>，
-        同时往 Tablestore 的 <code>{{ table }}</code> 表插一行
-        （uuid / 自增 id / plan_name / trace_id / trace_info / plan_info / create_time）。
+        把 Agent 跑出来的执行计划（Markdown）归档：正文放 OSS 的 <code>{{ prefix }}</code>，
+        元数据（uuid、自增 id、计划名、trace、摘要、地址、时间）写进 Tablestore 的
+        <code>{{ table }}</code> 表，按 id 倒序就能看到最新一份。
+      </p>
+      <p class="board__desc board__desc--sub">
+        只收 <code>.md</code>，<code>plan_info</code> 必填；同名文件会自动加时间戳，不会覆盖旧计划。
+        列表里的「打开」走 1 小时有效的预签名链接，桶是私有的，直接点地址打不开。
       </p>
     </div>
   </div>
@@ -26,7 +30,7 @@
   <section class="section">
     <div class="section__head">
       <h2>上传计划</h2>
-      <span class="hint">仅支持 .md，plan_info 必填</span>
+      <span class="hint">仅支持 .md，plan_info 必填，单文件 25MB 以内</span>
     </div>
 
     <div class="panel">
@@ -74,7 +78,7 @@
   <section class="section">
     <div class="section__head">
       <h2>已上传</h2>
-      <span class="hint" id="listHint">按自增 id 倒序</span>
+      <span class="hint" id="listHint">按自增 id 倒序，最新的在最前</span>
     </div>
 
     <div class="panel panel--flush">
