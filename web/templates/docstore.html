@@ -22,7 +22,7 @@
   <section class="section">
     <div class="section__head">
       <h2>上传文件</h2>
-      <span class="hint">单文件上限 25MB，{% if conf.desc_required %}分类和描述都是必填{% else %}分类必填、描述可选{% endif %}</span>
+      <span class="hint">单文件上限 {{ conf.limit_mb }}MB，{% if conf.desc_required %}分类和描述都是必填{% else %}分类必填、描述可选{% endif %}</span>
     </div>
 
     <div class="panel">
@@ -57,6 +57,10 @@
             <span>描述 description{% if not conf.desc_required %}（可选）{% endif %}</span>
             <input id="description" type="text" placeholder="一句话说明这份文档是什么"{% if conf.desc_required %} required{% endif %} />
           </label>
+        </div>
+
+        <div class="progress" id="progress" hidden>
+          <div class="progress__fill" id="progressFill"></div>
         </div>
 
         <div class="upload__foot">

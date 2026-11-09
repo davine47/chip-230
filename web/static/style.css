@@ -944,6 +944,43 @@ tbody tr:hover {
   color: var(--text-soft);
 }
 
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.progress__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6484fb, #3f5bd6);
+  transition: width 0.15s ease;
+}
+
+/* 浏览器传完了、服务端还在往 OSS 写：走条纹动画表示" indeterminate " */
+.progress--waiting .progress__fill {
+  width: 100% !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    #6484fb 0 10px,
+    #8ea6ff 10px 20px
+  );
+  background-size: 28px 28px;
+  animation: progress-stripes 0.9s linear infinite;
+}
+
+@keyframes progress-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 28px 0;
+  }
+}
+
 .upload__foot {
   display: flex;
   align-items: center;

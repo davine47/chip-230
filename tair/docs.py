@@ -72,32 +72,26 @@ class DocumentStore:
         return f"{self.prefix}{stem}-{time.strftime('%Y%m%d%H%M%S')}{suffix}"
 
     # ---------------------------------------------------------------- 写
-    def save(self, filename: str, data: bytes, category: str, description: str) -> dict[str, Any]:
-        """上传到 OSS 并写入索引表，返回这一行的完整字段。"""
-        settings = self.settings
-        name = safe_name(filename)
-        key = self._unique_key(name)
-        bucket = settings.oss_bucket
-
-        put = _oss(settings).put_object(
-            oss.PutObjectRequest(
-                bucket=bucket,
-                key=key,
-                body=data,
-                content_type=guess_content_type(name),
-            )
-        )
-
+    def _record(
+        self,
+        name: str,
+        url: str,
+        category: str,
+        description: str,
+        size: int,
+        etag: str = "",
+        request_id: str = "",
+    ) -> dict[str, Any]:
+        """往索引表写一行，返回给前端的完整字段。"""
         doc_id = uuid.uuid4().hex
         now_ms = int(time.time() * 1000)
-        url = oss_helper.object_url(settings, bucket, key)
         attrs = [("name", name), ("url", url)]
         if description:  # 描述可选：空字符串就不写这一列
             attrs.append(("describe", description))
         attrs += [("category", category), ("create_time", now_ms)]
-        row = Row([("id", doc_id)], attrs)
-        _ts(settings).put_row(self.table, row, Condition(RowExistenceExpectation.IGNORE))
-
+        _ts(self.settings).put_row(
+            self.table, Row([("id", doc_id)], attrs), Condition(RowExistenceExpectation.IGNORE)
+        )
         return {
             "id": doc_id,
             "name": name,
@@ -105,10 +99,62 @@ class DocumentStore:
             "describe": description,
             "category": category,
             "create_time": now_ms,
-            "size": len(data),
-            "etag": put.etag,
-            "request_id": put.request_id,
+            "size": size,
+            "etag": etag,
+            "request_id": request_id,
         }
+
+    def save(self, filename: str, data: bytes, category: str, description: str) -> dict[str, Any]:
+        """小文件：直接整块 PUT。"""
+        settings = self.settings
+        name = safe_name(filename)
+        key = self._unique_key(name)
+        put = _oss(settings).put_object(
+            oss.PutObjectRequest(
+                bucket=settings.oss_bucket,
+                key=key,
+                body=data,
+                content_type=guess_content_type(name),
+            )
+        )
+        return self._record(
+            name,
+            oss_helper.object_url(settings, settings.oss_bucket, key),
+            category,
+            description,
+            len(data),
+            put.etag,
+            put.request_id,
+        )
+
+    def save_from_file(
+        self, filename: str, filepath: str, category: str, description: str
+    ) -> dict[str, Any]:
+        """大文件：交给 uploader 做分片上传，内存占用和文件大小无关。"""
+        settings = self.settings
+        name = safe_name(filename)
+        key = self._unique_key(name)
+        result = (
+            _oss(settings)
+            .uploader()
+            .upload_file(
+                oss.PutObjectRequest(
+                    bucket=settings.oss_bucket,
+                    key=key,
+                    content_type=guess_content_type(name),
+                ),
+                filepath,
+            )
+        )
+        return self._record(
+            name,
+            oss_helper.object_url(settings, settings.oss_bucket, key),
+            category,
+            description,
+            Path(filepath).stat().st_size,
+            getattr(result, "etag", "") or "",
+            "",
+        )
 
     # ---------------------------------------------------------------- 读
     def list(self, limit: int = 200) -> list[dict[str, Any]]:

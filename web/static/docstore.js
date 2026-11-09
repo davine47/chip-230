@@ -11,6 +11,8 @@
     description: $("description"),
     uploadBtn: $("uploadBtn"),
     uploadHint: $("uploadHint"),
+    progress: $("progress"),
+    progressFill: $("progressFill"),
     rows: $("docRows"),
     empty: $("docEmpty"),
     emptyText: $("docEmptyText"),
@@ -159,6 +161,48 @@
     }
   }
 
+  function setProgress(percent) {
+    els.progress.hidden = false;
+    els.progress.classList.remove("progress--waiting");
+    els.progressFill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    els.uploadHint.textContent = `上传中 ${percent}%`;
+  }
+
+  function setWaiting() {
+    els.progress.hidden = false;
+    els.progress.classList.add("progress--waiting");
+    els.uploadHint.textContent = "上传完成，正在写入 OSS…";
+  }
+
+  function resetProgress() {
+    els.progress.hidden = true;
+    els.progress.classList.remove("progress--waiting");
+    els.progressFill.style.width = "0%";
+  }
+
+  // fetch 拿不到上传进度，改用 XHR 的 upload.onprogress
+  function postForm(url, body) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      xhr.responseType = "json";
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          setProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+      xhr.upload.onload = () => setWaiting();
+      xhr.onload = () => {
+        const data = xhr.response || {};
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.error || `上传失败（${xhr.status}）`));
+      };
+      xhr.onerror = () => reject(new Error("网络中断，上传失败"));
+      xhr.ontimeout = () => reject(new Error("上传超时"));
+      xhr.send(body);
+    });
+  }
+
   async function upload(event) {
     event.preventDefault();
     if (busy) return;
@@ -183,9 +227,7 @@
     body.append("description", description);
 
     try {
-      const response = await fetch(`${api}/upload`, { method: "POST", body });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "上传失败");
+      const data = await postForm(`${api}/upload`, body);
       toast(`已上传 ${data.document.name}`);
       els.form.reset();
       setFile(null);
@@ -194,6 +236,7 @@
       toast(error.message, true);
       els.uploadHint.textContent = "上传失败，可以重试";
     } finally {
+      resetProgress();
       busy = false;
       els.uploadBtn.disabled = false;
     }

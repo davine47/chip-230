@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
 import sys
+import tempfile
 import time
 from datetime import datetime
 from functools import wraps
@@ -32,7 +34,8 @@ from tair.openapi import describe_instances_overview  # noqa: E402
 
 SETTINGS = config.load_settings()
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 单文件上限 25MB
+MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # 全局硬上限，各看板另有更小的限制
+DOC_LIMIT_MB = {"documents": 25, "davine": 512}
 
 app = Flask(
     __name__,
@@ -315,6 +318,7 @@ DOC_PAGES = {
         "api": "/api/docs",
         "categories": None,
         "desc_required": True,
+        "limit_mb": DOC_LIMIT_MB["documents"],
     },
     "davine": {
         "accent": "#0ea5e9",
@@ -327,6 +331,7 @@ DOC_PAGES = {
         "api": "/api/davine",
         "categories": ["others", "paper", "books", "agents"],
         "desc_required": False,
+        "limit_mb": DOC_LIMIT_MB["davine"],
     },
 }
 
@@ -498,7 +503,12 @@ def api_delete_key():
 
 
 def register_doc_api(
-    name: str, factory, cache: dict, allowed_categories=None, require_description=True
+    name: str,
+    factory,
+    cache: dict,
+    allowed_categories=None,
+    require_description=True,
+    max_bytes: int = 25 * 1024 * 1024,
 ):
     """一块文档看板的 4 个接口：列表 / 上传 / 预签名 / 删除。"""
 
@@ -520,18 +530,28 @@ def register_doc_api(
         if allowed_categories and category not in allowed_categories:
             raise ValueError(f"category 只能是：{' / '.join(allowed_categories)}")
 
-        data = file.read()
-        if not data:
-            raise ValueError("文件是空的")
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise ValueError(f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB 上限")
+        # 先按 Content-Length 粗筛，省得白传一遍再被拒
+        if request.content_length and request.content_length > max_bytes + 2 * 1024 * 1024:
+            raise ValueError(f"文件超过 {max_bytes // 1024 // 1024}MB 上限")
 
-        doc = factory(SETTINGS).save(
-            filename=file.filename,
-            data=data,
-            category=category,
-            description=description,
-        )
+        # 大文件不能整块读进内存：落到临时文件，再交给 OSS uploader 分片上传
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix)
+        tmp.close()
+        try:
+            file.save(tmp.name)
+            size = os.path.getsize(tmp.name)
+            if size == 0:
+                raise ValueError("文件是空的")
+            if size > max_bytes:
+                raise ValueError(f"文件超过 {max_bytes // 1024 // 1024}MB 上限")
+            doc = factory(SETTINGS).save_from_file(
+                filename=file.filename,
+                filepath=tmp.name,
+                category=category,
+                description=description,
+            )
+        finally:
+            os.unlink(tmp.name)
         cache.update(ts=0.0, value=0)  # 让首页计数下次重新取
         return jsonify({"ok": True, "document": doc})
 
@@ -557,13 +577,19 @@ def register_doc_api(
     )
 
 
-register_doc_api("docs", docs_service.documents, DOC_COUNT_CACHE)
+register_doc_api(
+    "docs",
+    docs_service.documents,
+    DOC_COUNT_CACHE,
+    max_bytes=DOC_LIMIT_MB["documents"] * 1024 * 1024,
+)
 register_doc_api(
     "davine",
     docs_service.davine,
     DAVINE_COUNT_CACHE,
     DOC_PAGES["davine"]["categories"],
     require_description=DOC_PAGES["davine"]["desc_required"],
+    max_bytes=DOC_LIMIT_MB["davine"] * 1024 * 1024,
 )
 
 
