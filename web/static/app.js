@@ -40,8 +40,12 @@
 
   async function api(path, options = {}) {
     const response = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
       ...options,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "chip-230", // 写接口必须带，服务端据此拒绝跨站请求（见 web/guard.py）
+        ...(options.headers || {}),
+      },
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);

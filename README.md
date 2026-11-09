@@ -341,6 +341,9 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 | POST `/<id>/link` | 生成 1 小时预签名地址 | 同左 |
 | DELETE `/<id>` | 删索引 + 删 OSS 对象 | 同左 |
 
+> 写接口（POST/PUT/DELETE）必须带 `X-Requested-With: chip-230`，否则返回 403。
+> 这是防 CSRF 的：页面里的 JS 会自动带，自己用 curl 调要手动加。
+
 #### Plan 库 `/plans`
 
 只接受 `.md`；**github_project_name / github_project_branch 必填**，`plan_info`、`github_project_url`、
@@ -355,6 +358,7 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/plans/upload \
+  -H "X-Requested-With: chip-230" \
   --form-string "plan_info=计划摘要" \
   --form-string "github_project_name=chip-230" \
   --form-string "github_project_branch=main" \
@@ -419,7 +423,7 @@ Key 管理页的几个细节：
 看板一直转圈。一条命令修好：
 
 ```bash
-python scripts/allow_my_ip.py          # 自动探测当前出口 IP 并追加进白名单
+python scripts/allow_my_ip.py          # 自动探测当前出口 IP，写进专用分组 dev_auto（覆盖该分组）
 python scripts/allow_my_ip.py --show   # 只看当前白名单
 ```
 

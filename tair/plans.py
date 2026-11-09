@@ -19,6 +19,7 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import alibabacloud_oss_v2 as oss
 from tablestore import (
@@ -52,6 +53,22 @@ _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _oss = oss_helper.shared_client
 _ts = ts_helper.shared_client
 key_from_url = oss_helper.key_from_url
+
+
+def validate_repo_url(url: str) -> str:
+    """项目地址只接受 https:// 链接，空串表示不填。
+
+    这个值会被前端渲染成 <a href>，不校验的话可以存进 javascript:... ，别人一点就在看板里执行脚本。
+    """
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if len(url) > 500:
+        raise ValueError("github_project_url 太长（上限 500 字符）")
+    parts = urlsplit(url)
+    if parts.scheme.lower() != "https" or not parts.netloc or any(c in url for c in " \t\r\n<>\"'"):
+        raise ValueError("github_project_url 必须是 https:// 开头的有效链接")
+    return url
 
 
 def plans_prefix(settings: Settings) -> str:

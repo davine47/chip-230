@@ -81,11 +81,17 @@ curl -4 -s https://ifconfig.me/ip
 
 ```bash
 # 在仓库根目录
-python scripts/allow_my_ip.py            # 自动探测出口 IP 并追加
+python scripts/allow_my_ip.py            # 探测出口 IP，写进专用分组 dev_auto（覆盖该分组）
 python scripts/allow_my_ip.py --show     # 只看当前白名单，不改
-python scripts/allow_my_ip.py --ip 203.0.113.10   # 手动指定 IP
+python scripts/allow_my_ip.py --ip 203.0.113.10   # 手动指定 IP（或不小于 /24 的网段）
 python scripts/allow_my_ip.py --instance-id r-bp1xxxxxxxx
+python scripts/allow_my_ip.py --group dev_mac      # 每台机器一个分组，互不覆盖
+python scripts/allow_my_ip.py --append             # 追加而不是覆盖分组
 ```
+
+> 2026-11-10 起的行为：出口 IP 只走 HTTPS 探测，至少两个来源一致才写入；默认覆盖专用分组
+> `dev_auto`，换网络后旧 IP 自动失效；拒绝覆盖 `default` 等系统分组。旧版本追加在 `default`
+> 分组里的 IP 需要到控制台手动清理。
 
 输出示例：
 

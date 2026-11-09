@@ -1,5 +1,9 @@
 /* Plan 库：上传 .md + 列表 */
 (() => {
+  // 写接口必须带这个头，服务端据此拒绝跨站请求（见 web/guard.py）
+  const CSRF = { "X-Requested-With": "chip-230" };
+  // 只把 https 链接渲染成 <a>；历史数据里万一存了 javascript: 之类，也不会变成可点的链接
+  const safeHttps = (url) => (/^https:\/\//i.test(url || "") ? url : "");
   const $ = (id) => document.getElementById(id);
   const els = {
     form: $("planForm"),
@@ -97,10 +101,11 @@
       const ghCell = document.createElement("td");
       ghCell.className = "cell-gh";
       if (plan.github_project_name) {
-        const repo = document.createElement(plan.github_project_url ? "a" : "span");
+        const repoUrl = safeHttps(plan.github_project_url);
+        const repo = document.createElement(repoUrl ? "a" : "span");
         repo.textContent = plan.github_project_name;
-        if (plan.github_project_url) {
-          repo.href = plan.github_project_url;
+        if (repoUrl) {
+          repo.href = repoUrl;
           repo.target = "_blank";
           repo.rel = "noopener";
         }
@@ -163,7 +168,7 @@
   // ---------------------------------------------------------------- 操作
   async function openPlan(plan) {
     try {
-      const response = await fetch(`/api/plans/${plan.uuid}/${plan.id}/link`, { method: "POST" });
+      const response = await fetch(`/api/plans/${plan.uuid}/${plan.id}/link`, { method: "POST", headers: CSRF });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "生成链接失败");
       window.open(data.url, "_blank", "noopener");
@@ -175,7 +180,7 @@
   async function removePlan(plan) {
     if (!window.confirm(`删除「${plan.plan_name}」？表和 OSS 上的文件都会删掉。`)) return;
     try {
-      const response = await fetch(`/api/plans/${plan.uuid}/${plan.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/plans/${plan.uuid}/${plan.id}`, { method: "DELETE", headers: CSRF });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "删除失败");
       toast(`已删除 ${plan.plan_name}`);
@@ -216,7 +221,7 @@
     body.append("github_project_url", els.githubUrl.value.trim());
 
     try {
-      const response = await fetch("/api/plans/upload", { method: "POST", body });
+      const response = await fetch("/api/plans/upload", { method: "POST", body, headers: CSRF });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "上传失败");
       toast(`已上传 ${data.plan.plan_name}（id=${data.plan.id}）`);

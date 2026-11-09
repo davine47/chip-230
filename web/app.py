@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -26,6 +27,9 @@ from flask import Flask, jsonify, redirect, render_template, request
 
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR.parent))
+sys.path.insert(0, str(BASE_DIR))
+
+import guard  # noqa: E402  web/guard.py：Host 白名单 + 防跨站写
 
 from tair import config, redis_conn, redis_ops  # noqa: E402  （要在 sys.path 之后导入）
 from tair import docs as docs_service  # noqa: E402
@@ -48,6 +52,24 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.json.ensure_ascii = False  # 中文直接输出，别转成 \uXXXX
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+
+ALLOWED_HOSTS = guard.allowed_hostnames()
+
+
+@app.before_request
+def enforce_local_only():
+    """所有请求先过这一关：Host 必须是本机名；写请求必须带防跨站头。原理见 web/guard.py。"""
+    reason = guard.check_request(
+        request.method,
+        request.headers.get("Host"),
+        request.headers.get("Origin"),
+        request.headers.get(guard.CSRF_HEADER),
+        ALLOWED_HOSTS,
+    )
+    if reason:
+        return jsonify({"error": reason}), 403
+    return None
+
 
 # 连接与实例信息都做轻量缓存，避免每刷新一次页面就打一次 OpenAPI / PING
 _client: redis.Redis | None = None
@@ -248,8 +270,22 @@ def _dump(obj: object) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
+def _logged_error(exc: Exception, public: str, status: int):
+    """内部异常：完整信息只进服务端日志，前端只拿到通用说明 + 错误号，凭错误号去日志里查。
+
+    云 SDK 的异常文本里常带 endpoint、bucket、RequestId、内部路径等，不该原样回给浏览器。
+    """
+    err_id = uuid.uuid4().hex[:8]
+    app.logger.error("[%s] %s %s 失败", err_id, request.method, request.path, exc_info=exc)
+    return jsonify({"error": f"{public}（错误号 {err_id}，详情见服务端日志）"}), status
+
+
 def api_view(fn):
-    """把 Redis / 参数异常统一转成 JSON 错误，前端好统一 toast。"""
+    """把异常统一转成 JSON 错误，前端好统一 toast。
+
+    只有「我们自己写的、面向用户的」提示原样返回（KeyError / ValueError / Redis 服务端回复）；
+    其余一律走 _logged_error，不把内部细节暴露给前端。
+    """
 
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -257,13 +293,16 @@ def api_view(fn):
             return fn(*args, **kwargs)
         except KeyError as exc:
             return jsonify({"error": str(exc).strip("'")}), 404
+        except redis.ResponseError as exc:
+            # Redis 服务端的回复（如 ERR unknown command / WRONGTYPE），对排障有用、不含内部信息
+            return jsonify({"error": f"Redis 拒绝了这条命令：{exc}"}), 502
         except redis.RedisError as exc:
             reset_client()
-            return jsonify({"error": f"Redis 错误：{exc}"}), 502
+            return _logged_error(exc, "连接 Redis 失败，检查白名单或网络", 502)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:  # noqa: BLE001
-            return jsonify({"error": str(exc)}), 500
+            return _logged_error(exc, "服务器内部错误", 500)
 
     return wrapper
 
@@ -623,6 +662,7 @@ def api_plans_upload():
         raise ValueError("github_project_name 不能为空")
     if not github_branch:
         raise ValueError("github_project_branch 不能为空")
+    github_url = plans_service.validate_repo_url(github_url)  # 拦 javascript: 之类的链接
 
     data = file.read()
     if not data:

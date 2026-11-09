@@ -17,54 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from _stubs import install_stubs  # noqa: E402
 
-# ------------------------------------------------------------------ SDK 桩
-def _install_stubs() -> None:
-    ts = types.ModuleType("tablestore")
-    ts.INF_MIN, ts.INF_MAX, ts.PK_AUTO_INCR = "\x00MIN", "\xffMAX", "AUTO"
-
-    class Row:
-        def __init__(self, primary_key, attribute_columns=None):
-            self.primary_key = primary_key
-            self.attribute_columns = attribute_columns or []
-
-    ts.Row = Row
-    ts.Condition = lambda *a, **k: None
-    ts.RowExistenceExpectation = types.SimpleNamespace(IGNORE="IGNORE")
-    ts.ReturnType = types.SimpleNamespace(RT_PK="RT_PK")
-    ts.OTSClient = object
-    sys.modules.setdefault("tablestore", ts)
-
-    o = types.ModuleType("alibabacloud_oss_v2")
-
-    class Req:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
-
-    for name in (
-        "PutObjectRequest",
-        "GetObjectRequest",
-        "DeleteObjectRequest",
-        "ListBucketsRequest",
-        "ListObjectsV2Request",
-    ):
-        setattr(o, name, type(name, (Req,), {}))
-    o.Client = object
-    sys.modules.setdefault("alibabacloud_oss_v2", o)
-
-    r = types.ModuleType("redis")
-
-    class RedisError(Exception):
-        pass
-
-    class WatchError(RedisError):
-        pass
-
-    r.RedisError, r.WatchError, r.Redis = RedisError, WatchError, object
-    sys.modules.setdefault("redis", r)
-
-
-_install_stubs()
+install_stubs()
 
 from tair import docs, plans, redis_ops  # noqa: E402
 from tair import tablestore as ts_helper  # noqa: E402

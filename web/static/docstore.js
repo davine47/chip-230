@@ -25,6 +25,9 @@
   const api = els.form.dataset.api;
   if (!api) return;
 
+  // 写接口必须带这个头，服务端据此拒绝跨站请求（见 web/guard.py）
+  const CSRF = { "X-Requested-With": "chip-230" };
+
   let picked = null;
   let busy = false;
 
@@ -143,7 +146,7 @@
   // ---------------------------------------------------------------- 操作
   async function openDoc(id) {
     try {
-      const response = await fetch(`${api}/${id}/link`, { method: "POST" });
+      const response = await fetch(`${api}/${id}/link`, { method: "POST", headers: CSRF });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "生成链接失败");
       window.open(data.url, "_blank", "noopener");
@@ -155,7 +158,7 @@
   async function removeDoc(doc) {
     if (!window.confirm(`删除「${doc.name}」？索引和 OSS 上的文件都会删掉。`)) return;
     try {
-      const response = await fetch(`${api}/${doc.id}`, { method: "DELETE" });
+      const response = await fetch(`${api}/${doc.id}`, { method: "DELETE", headers: CSRF });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "删除失败");
       toast(`已删除 ${doc.name}`);
@@ -189,6 +192,7 @@
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", url);
+      Object.entries(CSRF).forEach(([name, value]) => xhr.setRequestHeader(name, value));
       xhr.responseType = "json";
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {

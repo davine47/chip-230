@@ -86,15 +86,21 @@ pkill -f "web/app.py"
 实例默认只放行 `127.0.0.1`，换机器或出口 IP 变了就会「离线」或超时。一条命令修好：
 
 ```bash
-# 自动探测本机出口 IP 并追加进白名单（需要 AK 有改白名单权限）
+# 自动探测本机出口 IP，写进专用分组 dev_auto（覆盖该分组，旧 IP 自动失效；需要 AK 有改白名单权限）
 ./.venv/bin/python scripts/allow_my_ip.py
 
 # 只看当前白名单，不改
 ./.venv/bin/python scripts/allow_my_ip.py --show
 
-# 手动指定 IP / 实例
+# 手动指定 IP / 实例（多个探测来源结果不一致时，脚本会拒绝自动写入，让你用 --ip 确认）
 ./.venv/bin/python scripts/allow_my_ip.py --ip 203.0.113.10 --instance-id r-bp1xxxxxxxx
+
+# 多台机器：每台用自己的分组，互不覆盖
+./.venv/bin/python scripts/allow_my_ip.py --group dev_mac
 ```
+
+> 出口 IP 只通过 HTTPS 探测，且至少两个来源一致才采信。脚本不会覆盖 `default` 等系统分组。
+> 旧版脚本追加在 `default` 分组里的 IP 不会被自动清理，确认不需要后到控制台手动删除。
 
 加完刷新页面，顶部状态应该从「离线」变成「在线 xx ms」。
 完整排查（地址类型、安全组、CIDR 写法、最小权限策略）见 [docs/ip-whitelist.md](docs/ip-whitelist.md)。
@@ -150,6 +156,11 @@ done
 ## 七、注意
 
 - 默认只监听 `127.0.0.1`。**不要**把 `WEB_HOST` 改成 `0.0.0.0` 暴露到公网——这个服务能直接改线上实例数据、删 OSS 对象。
+- 看板只接受 Host 为 `127.0.0.1` / `localhost` / `::1` 的请求（防 DNS rebinding），写接口必须带
+  `X-Requested-With: chip-230` 请求头（防跨站请求，页面自带的 JS 已经加上）。
+  用 `ssh -L` 转发到任意本地端口都能正常访问；如果经由别的主机名访问（如反向代理），
+  启动前设置 `WEB_ALLOWED_HOSTS=名字1,名字2`。
+  自己用 curl 调写接口时记得带上这个头：`curl -X DELETE -H 'X-Requested-With: chip-230' ...`
 - Flask 自带的 `app.run()` 只适合本地/内网调试，不要直接当生产服务器。
 
 ---
