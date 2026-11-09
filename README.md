@@ -254,7 +254,8 @@ python scripts/01_openapi_list_instances.py --raw    # 打印文档里那种完�
 
 # 4. 想验证数据面：把实例地址和密码也填进 .env
 #    REDIS_HOST=...  REDIS_PASSWORD=...
-#    连不上先看 docs/ip-whitelist.md（九成是白名单没放行）
+#    连不上先加白名单：./.venv/bin/python scripts/allow_my_ip.py
+#    （九成是出口 IP 不在白名单，详见 docs/ip-whitelist.md）
 python scripts/02_redis_commands.py        # 跑一遍常用命令（--keep 保留数据）
 python scripts/03_end2end.py               # 端到端：查实例 → 连接 → 读写验证
 ```
