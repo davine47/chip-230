@@ -22,7 +22,7 @@
   <section class="section">
     <div class="section__head">
       <h2>上传文件</h2>
-      <span class="hint">单文件上限 {{ conf.limit_mb }}MB，{% if conf.desc_required %}分类和描述都是必填{% else %}分类必填、描述可选{% endif %}</span>
+      <span class="hint">单文件上限 {{ conf.limit_mb }}MB，{% if conf.desc_required %}分类和描述都是必填{% else %}分类必填、描述可选{% endif %}{% if conf.expiry %}，上传成功会返回一条临时下载链接{% endif %}</span>
     </div>
 
     <div class="panel">
@@ -57,11 +57,32 @@
             <span>描述 description{% if not conf.desc_required %}（可选）{% endif %}</span>
             <input id="description" type="text" placeholder="一句话说明这份文档是什么"{% if conf.desc_required %} required{% endif %} />
           </label>
+          {% if conf.expiry %}
+          <label class="field field--exp">
+            <span>临时链接有效期</span>
+            <select id="expireHours">
+              {% for hours, label in conf.expiry_options %}
+              <option value="{{ hours }}"{% if hours == conf.expiry_default %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {% endif %}
         </div>
 
         <div class="progress" id="progress" hidden>
           <div class="progress__fill" id="progressFill"></div>
         </div>
+
+        {% if conf.expiry %}
+        <div class="result" id="result" hidden>
+          <span class="hint">上传成功，临时下载链接（<span id="resultExpiry"></span>）：</span>
+          <div class="result__row">
+            <input id="resultUrl" type="text" readonly />
+            <button class="btn" id="copyBtn" type="button">复制</button>
+            <a class="btn" id="openBtn" href="#" target="_blank" rel="noopener">打开</a>
+          </div>
+        </div>
+        {% endif %}
 
         <div class="upload__foot">
           <span class="hint" id="uploadHint">选择文件后点上传</span>

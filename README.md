@@ -322,8 +322,14 @@ Redis 点进去是二级看板（键空间 / 实例 / 命令，用子导航切�
 - `description`：文档库必填；davine 可选（不填就不写这一列，列表里显示 `-`）
 - **单文件上限**：文档库 25MB；davine 512MB
 - **上传进度**：davine 传大文件时显示进度条（浏览器传完 → 条纹动画表示「正在写入 OSS」）
+- **临时链接**：davine 上传成功后直接返回一条签名下载地址，有效期在上传时选
+  （1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天，默认 24 小时）
 
 大文件走的是「落临时文件 → OSS uploader 分片上传」，内存占用与文件大小无关。
+
+davine 的上传响应会多三个字段：`temporary_url`（签名地址）、`expires_at`（绝对过期时间）、
+`expires_hours`（有效期小时数）。桶是私有的，这个地址在有效期内可以直接下载，过期后 403。
+签名 URL 最长 7 天，超过这个范围会在签发前被拒。
 
 上传一次做两件事：
 
@@ -341,6 +347,9 @@ OSS 预签名链接，桶是私有的）、「删除」（同时删索引行和 
 | POST `/upload` | multipart：`file` + `category` + `description`，上限 25MB | 同左，`description` 可选，上限 512MB |
 | POST `/<id>/link` | 生成 1 小时预签名地址 | 同左 |
 | DELETE `/<id>` | 删索引 + 删 OSS 对象 | 同左 |
+
+> davine 的 `POST /upload` 与 `POST /complete` 支持 `expire_hours` 参数，成功响应额外带
+> `temporary_url` / `expires_at` / `expires_hours`；文档库没有这个参数，响应也不含这些字段。
 
 > 写接口（POST/PUT/DELETE）必须带 `X-Requested-With: chip-230`，否则返回 403。
 > 这是防 CSRF 的：页面里的 JS 会自动带，自己用 curl 调要手动加。

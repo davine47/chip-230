@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -43,6 +43,11 @@ MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # 全局硬上限，各看板另有更小�
 DOC_LIMIT_MB = {"documents": 25, "davine": 512}
 PLAN_MAX_BYTES = 5 * 1024 * 1024  # 计划只收 .md，5MB 足够；别沿用 512MB 的全局上限
 MULTIPART_SLACK = 2 * 1024 * 1024  # multipart 表单除文件外的开销，粗筛 Content-Length 时留的余量
+
+# 上传成功后顺带签一条临时下载链接。OSS 签名 URL 最长 7 天（168 小时），超过会被服务端拒掉。
+EXPIRY_OPTIONS = [(1, "1 小时"), (6, "6 小时"), (24, "24 小时"), (72, "3 天"), (168, "7 天")]
+EXPIRY_DEFAULT_HOURS = 24.0
+EXPIRY_MAX_HOURS = 168.0
 
 # 浏览器直传 OSS：默认开启；bucket 没配 CORS 时前端会自动退回服务器中转。设 0 强制走中转。
 DIRECT_UPLOAD = os.getenv("OSS_DIRECT_UPLOAD", "1").strip().lower() not in {
@@ -439,6 +444,10 @@ DOC_PAGES = {
         "categories": ["others", "paper", "books", "agents"],
         "desc_required": False,
         "limit_mb": DOC_LIMIT_MB["davine"],
+        # davine 上传成功后会返回一条临时下载链接，有效期由上传时选
+        "expiry": True,
+        "expiry_options": EXPIRY_OPTIONS,
+        "expiry_default": int(EXPIRY_DEFAULT_HOURS),
     },
 }
 
@@ -651,6 +660,29 @@ class PendingUploads:
 PENDING_UPLOADS = PendingUploads(DIRECT_UPLOAD_TTL)
 
 
+def _expire_hours(raw) -> float:
+    """解析「链接过期时间」（小时）。空值用默认 24 小时，越界直接拒绝。"""
+    try:
+        hours = float(raw) if raw not in (None, "") else EXPIRY_DEFAULT_HOURS
+    except (TypeError, ValueError):
+        raise ValueError("链接过期时间必须是小时数") from None
+    if not 0 < hours <= EXPIRY_MAX_HOURS:
+        raise ValueError(f"链接过期时间必须在 0 ~ {int(EXPIRY_MAX_HOURS)} 小时之间")
+    return hours
+
+
+def _attach_temp_link(store, doc: dict, hours: float) -> dict:
+    """给上传结果补一条临时下载链接：URL 本身带签名，expires_at 方便前端展示。"""
+    url = store.presign(doc["id"], hours=hours)
+    expires = datetime.now(timezone.utc) + timedelta(hours=hours)
+    return {
+        **doc,
+        "temporary_url": url,
+        "expires_at": expires.isoformat(timespec="seconds"),
+        "expires_hours": hours,
+    }
+
+
 def register_doc_api(
     name: str,
     factory,
@@ -658,6 +690,7 @@ def register_doc_api(
     allowed_categories=None,
     require_description=True,
     max_bytes: int = 25 * 1024 * 1024,
+    expiry: bool = False,
 ):
     """一块文档看板的接口：列表 / 直传（申请 + 确认）/ 中转上传 / 预签名 / 删除。"""
 
@@ -695,6 +728,7 @@ def register_doc_api(
         if not DIRECT_UPLOAD:
             return jsonify({"mode": "relay"})
 
+        hours = _expire_hours(payload.get("expire_hours")) if expiry else None
         info = factory(SETTINGS).prepare_direct_upload(filename)
         upload_id = PENDING_UPLOADS.add(
             board=name,
@@ -702,6 +736,7 @@ def register_doc_api(
             name=info["name"],
             category=category,
             description=description,
+            expire_hours=hours,
         )
         return jsonify(
             {
@@ -726,6 +761,8 @@ def register_doc_api(
             PENDING_UPLOADS.discard(upload_id)  # 对象已被删掉，这张凭证也没用了
             raise
         PENDING_UPLOADS.discard(upload_id)
+        if entry.get("expire_hours"):
+            doc = _attach_temp_link(factory(SETTINGS), doc, entry["expire_hours"])
         cache["ts"] = 0.0
         return jsonify({"ok": True, "document": doc})
 
@@ -745,6 +782,8 @@ def register_doc_api(
             raise ValueError("请选择要上传的文件")
         check_meta(category, description)
 
+        hours = _expire_hours(request.form.get("expire_hours")) if expiry else None
+
         # 大文件不能整块读进内存：落到临时文件，再交给 OSS uploader 分片上传
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix)
         tmp.close()
@@ -763,6 +802,8 @@ def register_doc_api(
             )
         finally:
             os.unlink(tmp.name)
+        if expiry:
+            doc = _attach_temp_link(factory(SETTINGS), doc, hours)
         cache["ts"] = 0.0  # 让首页计数下次重新取
         return jsonify({"ok": True, "document": doc})
 
@@ -815,6 +856,7 @@ register_doc_api(
     DOC_PAGES["davine"]["categories"],
     require_description=DOC_PAGES["davine"]["desc_required"],
     max_bytes=DOC_LIMIT_MB["davine"] * 1024 * 1024,
+    expiry=True,
 )
 
 

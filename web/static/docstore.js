@@ -13,6 +13,12 @@
     uploadHint: $("uploadHint"),
     progress: $("progress"),
     progressFill: $("progressFill"),
+    expireHours: $("expireHours"),
+    result: $("result"),
+    resultUrl: $("resultUrl"),
+    resultExpiry: $("resultExpiry"),
+    copyBtn: $("copyBtn"),
+    openBtn: $("openBtn"),
     rows: $("docRows"),
     empty: $("docEmpty"),
     emptyText: $("docEmptyText"),
@@ -181,6 +187,21 @@
     els.uploadHint.textContent = text;
   }
 
+  // 上传成功后的临时链接：只有选了有效期的看板（davine）才返回这个字段
+  function showResult(doc) {
+    if (!els.result || !doc || !doc.temporary_url) return;
+    els.resultUrl.value = doc.temporary_url;
+    els.openBtn.href = doc.temporary_url;
+    els.resultExpiry.textContent = doc.expires_at
+      ? `${new Date(doc.expires_at).toLocaleString()} 前有效`
+      : `${doc.expires_hours} 小时内有效`;
+    els.result.hidden = false;
+  }
+
+  function hideResult() {
+    if (els.result) els.result.hidden = true;
+  }
+
   function resetProgress() {
     els.progress.hidden = true;
     els.progress.classList.remove("progress--waiting");
@@ -226,12 +247,9 @@
 
   // 返回上传结果；返回 null 表示这次应该走服务器中转
   async function uploadDirect(file, category, description) {
-    const init = await postJSON(`${api}/upload-url`, {
-      filename: file.name,
-      size: file.size,
-      category,
-      description,
-    });
+    const payload = { filename: file.name, size: file.size, category, description };
+    if (els.expireHours) payload.expire_hours = els.expireHours.value;
+    const init = await postJSON(`${api}/upload-url`, payload);
     if (init.mode !== "direct") return null;
     try {
       await putToOss(init, file);
@@ -268,6 +286,21 @@
     });
   }
 
+  if (els.copyBtn) {
+    els.copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(els.resultUrl.value);
+        els.copyBtn.textContent = "已复制";
+        setTimeout(() => {
+          els.copyBtn.textContent = "复制";
+        }, 1500);
+      } catch {
+        els.resultUrl.select();
+        toast("自动复制失败，已选中链接，按 ⌘C 复制", true);
+      }
+    });
+  }
+
   async function upload(event) {
     event.preventDefault();
     if (busy) return;
@@ -283,6 +316,7 @@
     }
 
     busy = true;
+    hideResult();
     els.uploadBtn.disabled = true;
     els.uploadHint.textContent = "上传中…";
 
@@ -294,11 +328,14 @@
         body.append("file", picked);
         body.append("category", category);
         body.append("description", description);
+        if (els.expireHours) body.append("expire_hours", els.expireHours.value);
         data = await postForm(`${api}/upload`, body);
       }
       toast(`已上传 ${data.document.name}`);
+      // 顺序不能反：form.reset() 会把表单内的 #resultUrl 一起清空
       els.form.reset();
       setFile(null);
+      showResult(data.document);
       loadDocs();
     } catch (error) {
       toast(error.message, true);

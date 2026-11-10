@@ -759,6 +759,8 @@ tbody tr:hover {
   flex: 0 0 190px;
 }
 
+
+
 .field input,
 .field select,
 .field textarea {
@@ -819,6 +821,12 @@ tbody tr:hover {
 }
 
 .row--equal > .field,
+/* 「临时链接有效期」固定在行尾，别被 .field:last-child 的 flex:1 拉满 */
+.row > .field.field--exp,
+.row > .field.field--exp:last-child {
+  flex: 0 0 150px;
+}
+
 .row--equal > .field:last-child {
   flex: 1 1 0;
   min-width: 0;
@@ -1055,6 +1063,33 @@ tbody tr:hover {
 .dropzone__text {
   font-size: 13px;
   color: var(--text-soft);
+}
+
+/* 上传成功后返回的临时下载链接 */
+.result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent, #3f5bd6) 32%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #3f5bd6) 6%, #fff);
+}
+
+.result__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.result__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .progress {

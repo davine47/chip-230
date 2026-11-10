@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import sys
-import types
 import unittest
 from pathlib import Path
 
@@ -15,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "web"))
 
+from _fakes import FakeOSS, FakeOTS, settings, use  # noqa: E402
 from _stubs import install_stubs  # noqa: E402
 
 install_stubs()
@@ -22,61 +22,8 @@ install_stubs()
 import guard  # noqa: E402
 
 from tair import docs  # noqa: E402
-from tair import oss as oss_helper  # noqa: E402
-from tair import tablestore as ts_helper  # noqa: E402
-from tair.config import load_settings  # noqa: E402
 
 CSRF = {guard.CSRF_HEADER: guard.CSRF_VALUE}
-
-
-def _settings(**over):
-    s = load_settings()
-    base = {"oss_bucket": "b", "ts_instance": "i", "access_key_id": "a", "access_key_secret": "s"}
-    return s.__class__(**{**s.__dict__, **base, **over})
-
-
-class FakeOTS:
-    def __init__(self):
-        self.rows = []
-        self.fail_put = False
-
-    def put_row(self, table, row, condition, return_type=None):
-        if self.fail_put:
-            raise RuntimeError("OTS 写入失败")
-        self.rows.append(row)
-        return None, None
-
-    def get_range(self, *a, **k):
-        return None, None, [], None
-
-
-class FakeOSS:
-    def __init__(self, size=10, missing=False):
-        self.size, self.missing = size, missing
-        self.deleted: list[str] = []
-
-    def is_object_exist(self, bucket, key):
-        return False
-
-    def presign(self, req, expires=None):
-        return types.SimpleNamespace(
-            url=f"https://{req.bucket}.oss/{req.key}?sig=1",
-            method="PUT",
-            signed_headers={"Host": "b.oss", "Content-Type": req.content_type},
-        )
-
-    def head_object(self, req):
-        if self.missing:
-            raise RuntimeError("StatusCode: 404, ErrorCode: NoSuchKey")
-        return types.SimpleNamespace(content_length=self.size, etag='"abc"')
-
-    def delete_object(self, req):
-        self.deleted.append(req.key)
-
-
-def _use(ots, oss_client):
-    ts_helper._SHARED[:] = [ots]
-    oss_helper._SHARED[:] = [oss_client]
 
 
 # ------------------------------------------------------------------ 10 文件名截断
@@ -99,19 +46,19 @@ class SafeNameTest(unittest.TestCase):
 # ------------------------------------------------------------------ 13 配置检查
 class ConfigTest(unittest.TestCase):
     def test_missing_docstore(self):
-        self.assertEqual(_settings().missing_docstore, [])
-        missing = _settings(oss_bucket="", ts_instance="").missing_docstore
+        self.assertEqual(settings().missing_docstore, [])
+        missing = settings(oss_bucket="", ts_instance="").missing_docstore
         self.assertEqual(missing, ["OSS_BUCKET", "OTS_INSTANCE"])
-        self.assertFalse(_settings(oss_bucket="").has_docstore)
-        self.assertTrue(_settings(oss_bucket="").has_oss)  # 只看凭据，04 演示脚本靠它自动挑 bucket
+        self.assertFalse(settings(oss_bucket="").has_docstore)
+        self.assertTrue(settings(oss_bucket="").has_oss)  # 只看凭据，04 演示脚本靠它自动挑 bucket
 
 
 # ------------------------------------------------------------------ 7 直传（存储层）
 class DirectUploadStoreTest(unittest.TestCase):
     def setUp(self):
         self.ots, self.oss = FakeOTS(), FakeOSS(size=10)
-        _use(self.ots, self.oss)
-        self.store = docs.documents(_settings())
+        use(self.ots, self.oss)
+        self.store = docs.documents(settings())
 
     def test_prepare_signs_content_type_and_hides_host(self):
         info = self.store.prepare_direct_upload("data.bin")
@@ -165,9 +112,9 @@ class AppP2Test(unittest.TestCase):
 
     def setUp(self):
         self._saved = (self.webapp.SETTINGS, self.webapp.DIRECT_UPLOAD)
-        self.webapp.SETTINGS = _settings()
+        self.webapp.SETTINGS = settings()
         self.ots, self.oss = FakeOTS(), FakeOSS(size=10)
-        _use(self.ots, self.oss)
+        use(self.ots, self.oss)
 
     def tearDown(self):
         self.webapp.SETTINGS, self.webapp.DIRECT_UPLOAD = self._saved
@@ -234,7 +181,7 @@ class AppP2Test(unittest.TestCase):
 
     # ---- 13
     def test_missing_bucket_is_explained(self):
-        self.webapp.SETTINGS = _settings(oss_bucket="")
+        self.webapp.SETTINGS = settings(oss_bucket="")
         for method, url in (("get", "/api/docs"), ("get", "/api/plans")):
             resp = getattr(self.client, method)(url)
             self.assertEqual(resp.status_code, 400)
