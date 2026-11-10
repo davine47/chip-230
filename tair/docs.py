@@ -29,7 +29,7 @@ from . import oss as oss_helper
 from . import tablestore as ts_helper
 from .config import Settings
 
-COLUMNS = ["name", "url", "describe", "category", "create_time"]
+COLUMNS = ["name", "url", "describe", "category", "create_time", "tmp_public_url"]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 _oss = oss_helper.shared_client
@@ -97,6 +97,7 @@ class DocumentStore:
         size: int,
         etag: str = "",
         request_id: str = "",
+        tmp_public_url: str = "",
     ) -> dict[str, Any]:
         """往索引表写一行，返回给前端的完整字段。"""
         doc_id = uuid.uuid4().hex
@@ -105,6 +106,8 @@ class DocumentStore:
         if description:  # 描述可选：空字符串就不写这一列
             attrs.append(("describe", description))
         attrs += [("category", category), ("create_time", now_ms)]
+        if tmp_public_url:  # 只有要了临时链接才写这一列
+            attrs.append(("tmp_public_url", tmp_public_url))
         _ts(self.settings).put_row(
             self.table, Row([("id", doc_id)], attrs), Condition(RowExistenceExpectation.IGNORE)
         )
@@ -118,10 +121,16 @@ class DocumentStore:
             "size": size,
             "etag": etag,
             "request_id": request_id,
+            "tmp_public_url": tmp_public_url,
         }
 
     def save_from_file(
-        self, filename: str, filepath: str, category: str, description: str
+        self,
+        filename: str,
+        filepath: str,
+        category: str,
+        description: str,
+        tmp_hours: float | None = None,
     ) -> dict[str, Any]:
         """大文件：交给 uploader 做分片上传，内存占用和文件大小无关。"""
         settings = self.settings
@@ -148,6 +157,7 @@ class DocumentStore:
                 Path(filepath).stat().st_size,
                 getattr(result, "etag", "") or "",
                 "",
+                self._sign_key(key, tmp_hours) if tmp_hours else "",
             )
         except Exception:
             # 索引没写进去，对象就是孤儿：看板列不出来、也删不掉，所以立刻回滚
@@ -184,7 +194,13 @@ class DocumentStore:
         }
 
     def complete_direct_upload(
-        self, name: str, key: str, category: str, description: str, max_bytes: int
+        self,
+        name: str,
+        key: str,
+        category: str,
+        description: str,
+        max_bytes: int,
+        tmp_hours: float | None = None,
     ) -> dict[str, Any]:
         """浏览器直传第二步：确认对象真的在 OSS 上、大小合规，再写索引。
 
@@ -213,6 +229,7 @@ class DocumentStore:
                 size,
                 (getattr(head, "etag", "") or "").strip('"'),
                 "",
+                self._sign_key(key, tmp_hours) if tmp_hours else "",
             )
         except Exception:
             oss_helper.discard_object(client, settings.oss_bucket, key)
@@ -249,16 +266,20 @@ class DocumentStore:
         item.update(ts_helper.row_to_dict(row))
         return item
 
-    def presign(self, doc_id: str, hours: int = 1) -> str:
-        """按 id 生成临时下载链接；桶是私有的，直接给 url 打不开。"""
-        doc = self.get(doc_id)
-        if not doc:
-            raise KeyError("文档不存在")
+    def _sign_key(self, key: str, hours: float) -> str:
+        """给对象 key 签一个限时下载地址；桶是私有的，直接给 url 打不开。"""
         signed = _oss(self.settings).presign(
-            oss.GetObjectRequest(bucket=self.settings.oss_bucket, key=key_from_url(doc["url"])),
+            oss.GetObjectRequest(bucket=self.settings.oss_bucket, key=key),
             expires=timedelta(hours=hours),
         )
         return signed.url
+
+    def presign(self, doc_id: str, hours: int = 1) -> str:
+        """按 id 现签一条链接（列表里的「打开」用）。"""
+        doc = self.get(doc_id)
+        if not doc:
+            raise KeyError("文档不存在")
+        return self._sign_key(key_from_url(doc["url"]), hours)
 
     # ---------------------------------------------------------------- 删
     def delete(self, doc_id: str) -> bool:

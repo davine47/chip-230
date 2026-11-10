@@ -31,6 +31,8 @@
   const api = els.form.dataset.api;
   if (!api) return;
 
+  const tmpLinkEnabled = els.form.dataset.tmpLink === "1";
+
   // 写接口必须带这个头，服务端据此拒绝跨站请求（见 web/guard.py）
   const CSRF = { "X-Requested-With": "chip-230" };
 
@@ -129,10 +131,86 @@
       del.textContent = "删除";
       del.addEventListener("click", () => removeDoc(doc));
 
+      if (tmpLinkEnabled) {
+        const tmp = document.createElement("button");
+        tmp.type = "button";
+        tmp.className = "btn btn--ghost btn--sm";
+        tmp.textContent = "临时链接";
+        tmp.addEventListener("click", () => toggleTmpLink(doc, tr, tmp));
+        actions.append(tmp);
+      }
+
       actions.append(open, del);
       tr.append(nameCell, catCell, descCell, timeCell, actions);
       els.rows.append(tr);
     });
+  }
+
+  // 点「临时链接」：读表里存的 tmp_public_url，展开一行显示；没有就说「无临时链接」
+  async function toggleTmpLink(doc, tr, button) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains("detail")) {
+      next.remove();
+      return;
+    }
+    let url = "";
+    let message = "";
+    button.disabled = true;
+    try {
+      const response = await fetch(`${api}/${doc.id}/tmp-link`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "查询失败");
+      url = data.url || "";
+      message = data.message || "";
+    } catch (error) {
+      message = error.message;
+    } finally {
+      button.disabled = false;
+    }
+
+    const detail = document.createElement("tr");
+    detail.className = "detail";
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+
+    if (!url) {
+      cell.className = "detail__empty";
+      cell.textContent = message || "无临时链接";
+    } else {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.readOnly = true;
+      input.value = url;
+      input.className = "detail__url";
+
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "btn btn--ghost btn--sm";
+      copy.textContent = "复制";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          copy.textContent = "已复制";
+          setTimeout(() => {
+            copy.textContent = "复制";
+          }, 1500);
+        } catch {
+          input.select();
+          toast("自动复制失败，已选中链接，按 ⌘C 复制", true);
+        }
+      });
+
+      const open = document.createElement("a");
+      open.className = "btn btn--ghost btn--sm";
+      open.textContent = "打开";
+      open.href = url;
+      open.target = "_blank";
+      open.rel = "noopener";
+
+      cell.append(input, copy, open);
+    }
+    detail.append(cell);
+    tr.after(detail);
   }
 
   async function loadDocs() {

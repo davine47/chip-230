@@ -671,13 +671,16 @@ def _expire_hours(raw) -> float:
     return hours
 
 
-def _attach_temp_link(store, doc: dict, hours: float) -> dict:
-    """给上传结果补一条临时下载链接：URL 本身带签名，expires_at 方便前端展示。"""
-    url = store.presign(doc["id"], hours=hours)
+def _attach_temp_link(doc: dict, hours: float) -> dict:
+    """上传结果里补上过期时间。
+
+    链接本身在上传时就签好并存进表里的 tmp_public_url 了（刷新页面后还能查回来），
+    这里只补 expires_at / expires_hours 给前端展示，不重新签名。
+    """
     expires = datetime.now(timezone.utc) + timedelta(hours=hours)
     return {
         **doc,
-        "temporary_url": url,
+        "temporary_url": doc.get("tmp_public_url", ""),
         "expires_at": expires.isoformat(timespec="seconds"),
         "expires_hours": hours,
     }
@@ -755,14 +758,19 @@ def register_doc_api(
         entry = PENDING_UPLOADS.get(upload_id, board=name)
         try:
             doc = factory(SETTINGS).complete_direct_upload(
-                entry["name"], entry["key"], entry["category"], entry["description"], max_bytes
+                entry["name"],
+                entry["key"],
+                entry["category"],
+                entry["description"],
+                max_bytes,
+                tmp_hours=entry.get("expire_hours"),
             )
         except ValueError:
             PENDING_UPLOADS.discard(upload_id)  # 对象已被删掉，这张凭证也没用了
             raise
         PENDING_UPLOADS.discard(upload_id)
         if entry.get("expire_hours"):
-            doc = _attach_temp_link(factory(SETTINGS), doc, entry["expire_hours"])
+            doc = _attach_temp_link(doc, entry["expire_hours"])
         cache["ts"] = 0.0
         return jsonify({"ok": True, "document": doc})
 
@@ -799,17 +807,29 @@ def register_doc_api(
                 filepath=tmp.name,
                 category=category,
                 description=description,
+                tmp_hours=hours,
             )
         finally:
             os.unlink(tmp.name)
         if expiry:
-            doc = _attach_temp_link(factory(SETTINGS), doc, hours)
+            doc = _attach_temp_link(doc, hours)
         cache["ts"] = 0.0  # 让首页计数下次重新取
         return jsonify({"ok": True, "document": doc})
 
     def link_view(doc_id: str):
         require_docstore()
         return jsonify({"ok": True, "url": factory(SETTINGS).presign(doc_id)})
+
+    def tmp_link_view(doc_id: str):
+        """列表里「临时链接」按钮用：把上传时存下的链接读回来，没有就明说。"""
+        require_docstore()
+        doc = factory(SETTINGS).get(doc_id)
+        if not doc:
+            raise KeyError("文档不存在")
+        url = (doc.get("tmp_public_url") or "").strip()
+        if not url:
+            return jsonify({"ok": True, "url": "", "message": "无临时链接"})
+        return jsonify({"ok": True, "url": url})
 
     def delete_view(doc_id: str):
         require_docstore()
@@ -838,6 +858,13 @@ def register_doc_api(
     app.add_url_rule(
         f"/api/{name}/<doc_id>/link", f"{name}_link", api_view(link_view), methods=["POST"]
     )
+    if expiry:
+        app.add_url_rule(
+            f"/api/{name}/<doc_id>/tmp-link",
+            f"{name}_tmp_link",
+            api_view(tmp_link_view),
+            methods=["GET"],
+        )
     app.add_url_rule(
         f"/api/{name}/<doc_id>", f"{name}_delete", api_view(delete_view), methods=["DELETE"]
     )

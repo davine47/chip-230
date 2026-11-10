@@ -1065,6 +1065,31 @@ tbody tr:hover {
   color: var(--text-soft);
 }
 
+/* 列表里点「临时链接」展开的那一行 */
+.detail > td {
+  padding: 10px 12px 14px;
+  background: color-mix(in srgb, var(--accent, #3f5bd6) 5%, #fff);
+  border-bottom: 1px solid var(--border);
+}
+
+.detail__url {
+  width: 100%;
+  max-width: 640px;
+  margin-right: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.detail__empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* 上传成功后返回的临时下载链接 */
 .result {
   margin-top: 14px;

@@ -121,6 +121,46 @@ class DavineLinkTest(unittest.TestCase):
         done = self._post("/api/docs/complete", {"upload_id": init["upload_id"]})
         self.assertNotIn("temporary_url", done.get_json()["document"])
 
+    # ---- 上传时把链接落库，之后用 /tmp-link 查回来
+    def test_tmp_link_is_stored_and_queryable(self):
+        response = self.client.post(
+            "/api/davine/upload",
+            data={
+                "file": (io.BytesIO(b"hello"), "c.md"),
+                "category": "others",
+                "description": "",
+                "expire_hours": "6",
+            },
+            headers=CSRF,
+            content_type="multipart/form-data",
+        )
+        doc_id = response.get_json()["document"]["id"]
+
+        got = self.client.get(f"/api/davine/{doc_id}/tmp-link").get_json()
+        self.assertTrue(got["url"].startswith("https://"))
+        self.assertNotIn("message", got)
+
+        # 表里确实多了一列
+        store = self.webapp.docs_service.davine(self.webapp.SETTINGS)
+        self.assertTrue(store.get(doc_id)["tmp_public_url"])
+
+    def test_tmp_link_reports_missing(self):
+        # 没有 tmp_public_url 的老数据
+        self.ots.rows.append(
+            type(
+                "R", (), {"primary_key": [("id", "old")], "attribute_columns": [("name", "x.md")]}
+            )()
+        )
+        got = self.client.get("/api/davine/old/tmp-link").get_json()
+        self.assertEqual(got["url"], "")
+        self.assertEqual(got["message"], "无临时链接")
+
+    def test_tmp_link_route_only_on_davine(self):
+        self.assertEqual(self.client.get("/api/docs/whatever/tmp-link").status_code, 404)
+
+    def test_tmp_link_unknown_doc_is_404(self):
+        self.assertEqual(self.client.get("/api/davine/nope/tmp-link").status_code, 404)
+
     # ---- 过期时间不合法时，在签发地址之前就拒掉
     def test_invalid_expiry_rejected_before_signing(self):
         base = {"filename": "a.md", "size": 10, "category": "paper", "description": ""}

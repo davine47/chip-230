@@ -314,7 +314,8 @@ Redis 点进去是二级看板（键空间 / 实例 / 命令，用子导航切�
 | `/documents` | `agents/docs/` | `oss_documents` |
 | `/davine` | `davine_exchange/` | `davine_oss_documents` |
 
-表结构完全一致：主键 `id`(STRING)，属性列 `name / url / describe / category / create_time`。
+表结构基本一致：主键 `id`(STRING)，属性列 `name / url / describe / category / create_time`；
+davine 额外有 `tmp_public_url`（上传时签好的临时下载地址，见下）。
 
 两块的差别：
 
@@ -330,6 +331,10 @@ Redis 点进去是二级看板（键空间 / 实例 / 命令，用子导航切�
 davine 的上传响应会多三个字段：`temporary_url`（签名地址）、`expires_at`（绝对过期时间）、
 `expires_hours`（有效期小时数）。桶是私有的，这个地址在有效期内可以直接下载，过期后 403。
 签名 URL 最长 7 天，超过这个范围会在签发前被拒。
+
+这条链接同时写进索引表的 `tmp_public_url` 列，所以**刷新页面不会丢**：列表每行末尾有「临时链接」
+按钮，点开在该行下面展开地址（可复制/打开）；没有链接的老数据显示「无临时链接」。
+接口是 `GET /api/davine/<id>/tmp-link`，过期时间不做过期清理，按存下来的原样返回。
 
 上传一次做两件事：
 

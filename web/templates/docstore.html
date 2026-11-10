@@ -26,7 +26,7 @@
     </div>
 
     <div class="panel">
-      <form id="uploadForm" class="upload" autocomplete="off" data-api="{{ conf.api }}">
+      <form id="uploadForm" class="upload" autocomplete="off" data-api="{{ conf.api }}"{% if conf.expiry %} data-tmp-link="1"{% endif %}>
         <label class="dropzone" id="dropzone" for="fileInput">
           <input id="fileInput" type="file" hidden />
           <span class="dropzone__icon" aria-hidden="true">
