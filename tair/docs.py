@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,10 @@ from . import oss as oss_helper
 from . import tablestore as ts_helper
 from .config import Settings
 
-COLUMNS = ["name", "url", "describe", "category", "create_time", "tmp_public_url"]
+COLUMNS = ["name", "url", "describe", "category", "create_time"]
+# 临时链接两列：签名地址（谁拿到都能下载）+ 它的过期时间（毫秒时间戳）。
+# 只有按 id 查单条时才读，列表扫描绝不带出来，免得打开页面就把所有链接都发给浏览器。
+LINK_COLUMNS = ["tmp_public_url", "tmp_expire_time"]
 _BAD_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 _oss = oss_helper.shared_client
@@ -98,6 +101,7 @@ class DocumentStore:
         etag: str = "",
         request_id: str = "",
         tmp_public_url: str = "",
+        tmp_expire_time: int = 0,
     ) -> dict[str, Any]:
         """往索引表写一行，返回给前端的完整字段。"""
         doc_id = uuid.uuid4().hex
@@ -106,8 +110,8 @@ class DocumentStore:
         if description:  # 描述可选：空字符串就不写这一列
             attrs.append(("describe", description))
         attrs += [("category", category), ("create_time", now_ms)]
-        if tmp_public_url:  # 只有要了临时链接才写这一列
-            attrs.append(("tmp_public_url", tmp_public_url))
+        if tmp_public_url:  # 只有要了临时链接才写这两列
+            attrs += [("tmp_public_url", tmp_public_url), ("tmp_expire_time", tmp_expire_time)]
         _ts(self.settings).put_row(
             self.table, Row([("id", doc_id)], attrs), Condition(RowExistenceExpectation.IGNORE)
         )
@@ -122,6 +126,7 @@ class DocumentStore:
             "etag": etag,
             "request_id": request_id,
             "tmp_public_url": tmp_public_url,
+            "tmp_expire_time": tmp_expire_time,
         }
 
     def save_from_file(
@@ -157,7 +162,7 @@ class DocumentStore:
                 Path(filepath).stat().st_size,
                 getattr(result, "etag", "") or "",
                 "",
-                self._sign_key(key, tmp_hours) if tmp_hours else "",
+                *self._tmp_link(key, tmp_hours),
             )
         except Exception:
             # 索引没写进去，对象就是孤儿：看板列不出来、也删不掉，所以立刻回滚
@@ -229,7 +234,7 @@ class DocumentStore:
                 size,
                 (getattr(head, "etag", "") or "").strip('"'),
                 "",
-                self._sign_key(key, tmp_hours) if tmp_hours else "",
+                *self._tmp_link(key, tmp_hours),
             )
         except Exception:
             oss_helper.discard_object(client, settings.oss_bucket, key)
@@ -259,27 +264,38 @@ class DocumentStore:
         return self.scan()[0][:limit]
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
-        _, row, _ = _ts(self.settings).get_row(self.table, [("id", doc_id)], columns_to_get=COLUMNS)
+        _, row, _ = _ts(self.settings).get_row(
+            self.table, [("id", doc_id)], columns_to_get=COLUMNS + LINK_COLUMNS
+        )
         if row is None:
             return None
         item = ts_helper.primary_key_dict(row)
         item.update(ts_helper.row_to_dict(row))
         return item
 
-    def _sign_key(self, key: str, hours: float) -> str:
-        """给对象 key 签一个限时下载地址；桶是私有的，直接给 url 打不开。"""
+    def _sign_key(self, key: str, hours: float) -> tuple[str, int]:
+        """给对象 key 签一个限时下载地址，返回 (地址, 过期时间毫秒戳)。桶是私有的，直接给 url 打不开。
+
+        过期时刻先算好再交给 SDK（expiration=），存下来的时间和签名里的就是同一个值，
+        不会像各自取 now() 那样差出几秒。
+        """
+        expiration = datetime.now(timezone.utc) + timedelta(hours=hours)
         signed = _oss(self.settings).presign(
             oss.GetObjectRequest(bucket=self.settings.oss_bucket, key=key),
-            expires=timedelta(hours=hours),
+            expiration=expiration,
         )
-        return signed.url
+        return signed.url, int(expiration.timestamp() * 1000)
 
-    def presign(self, doc_id: str, hours: int = 1) -> str:
+    def _tmp_link(self, key: str, hours: float | None) -> tuple[str, int]:
+        """上传时要不要顺带签临时链接：没选有效期就返回空。"""
+        return self._sign_key(key, hours) if hours else ("", 0)
+
+    def presign(self, doc_id: str, hours: float = 1) -> str:
         """按 id 现签一条链接（列表里的「打开」用）。"""
         doc = self.get(doc_id)
         if not doc:
             raise KeyError("文档不存在")
-        return self._sign_key(key_from_url(doc["url"]), hours)
+        return self._sign_key(key_from_url(doc["url"]), hours)[0]
 
     # ---------------------------------------------------------------- 删
     def delete(self, doc_id: str) -> bool:

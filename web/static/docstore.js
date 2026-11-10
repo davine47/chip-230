@@ -155,13 +155,18 @@
     }
     let url = "";
     let message = "";
+    let expiresAt = null;
     button.disabled = true;
     try {
       const response = await fetch(`${api}/${doc.id}/tmp-link`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "查询失败");
       url = data.url || "";
-      message = data.message || "";
+      expiresAt = data.expires_at || null;
+      message =
+        data.expired && expiresAt
+          ? `临时链接已于 ${new Date(expiresAt).toLocaleString()} 过期`
+          : data.message || "";
     } catch (error) {
       message = error.message;
     } finally {
@@ -207,7 +212,13 @@
       open.target = "_blank";
       open.rel = "noopener";
 
-      cell.append(input, copy, open);
+      const note = document.createElement("p");
+      note.className = "hint detail__note";
+      note.textContent =
+        (expiresAt ? `${new Date(expiresAt).toLocaleString()} 前有效` : "过期时间未知") +
+        "。拿到链接的任何人都能下载，到期前无法撤销。";
+
+      cell.append(input, copy, open, note);
     }
     detail.append(cell);
     tr.after(detail);

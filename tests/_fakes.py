@@ -50,8 +50,17 @@ class FakeOTS:
                 )
         return None, None, None
 
-    def get_range(self, *a, **k):
-        return None, None, [], None
+    def get_range(self, table, direction, start, end, columns_to_get=None, limit=None):
+        """一页返回全部行，只带 columns_to_get 里要的列（与真实 SDK 一致）。"""
+        rows = []
+        for row in self.rows:
+            attrs = [
+                (name, value, None)
+                for name, value in (row.attribute_columns or [])
+                if columns_to_get is None or name in columns_to_get
+            ]
+            rows.append(types.SimpleNamespace(primary_key=row.primary_key, attribute_columns=attrs))
+        return None, None, rows, None
 
 
 class _Uploader:
@@ -75,8 +84,9 @@ class FakeOSS:
     def uploader(self):
         return _Uploader(self)
 
-    def presign(self, req, expires=None):
+    def presign(self, req, expires=None, expiration=None):
         self.last_expires = expires
+        self.last_expiration = expiration
         # PutObjectRequest 有 content_type，GetObjectRequest 没有
         headers = {"Host": "b.oss"}
         if getattr(req, "content_type", None):

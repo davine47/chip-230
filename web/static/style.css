@@ -1085,6 +1085,15 @@ tbody tr:hover {
   font-size: 12px;
 }
 
+.detail__note {
+  margin: 8px 0 0;
+}
+
+.result__warn {
+  display: block;
+  margin: 8px 0 0;
+}
+
 .detail__empty {
   color: var(--muted);
   font-size: 13px;

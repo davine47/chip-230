@@ -155,6 +155,81 @@ class DavineLinkTest(unittest.TestCase):
         self.assertEqual(got["url"], "")
         self.assertEqual(got["message"], "无临时链接")
 
+    # ---- 第 1 档修复：列表不带链接、过期时间同源、过期如实告知
+    def _relay_upload(self, name="d.md", hours="6"):
+        response = self.client.post(
+            "/api/davine/upload",
+            data={
+                "file": (io.BytesIO(b"hello"), name),
+                "category": "others",
+                "expire_hours": hours,
+            },
+            headers=CSRF,
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["document"]
+
+    def test_list_does_not_leak_signed_links(self):
+        self._relay_upload()
+        docs = self.client.get("/api/davine").get_json()["documents"]
+        self.assertEqual(len(docs), 1)
+        self.assertNotIn("tmp_public_url", docs[0])
+        self.assertNotIn("tmp_expire_time", docs[0])
+
+    def test_expiry_matches_signature(self):
+        doc = self._relay_upload(hours="6")
+        signed_at = self.oss.last_expiration  # 交给 SDK 签名用的过期时刻
+        self.assertIsNotNone(signed_at)
+        self.assertEqual(doc["expires_at"], signed_at.isoformat(timespec="seconds"))
+        got = self.client.get(f"/api/davine/{doc['id']}/tmp-link").get_json()
+        self.assertEqual(got["expires_at"], doc["expires_at"])
+        self.assertFalse(got["expired"])
+
+    def test_expired_link_is_reported_not_returned(self):
+        past_ms = 1_000_000  # 1970 年，早就过期
+        self.ots.rows.append(
+            type(
+                "R",
+                (),
+                {
+                    "primary_key": [("id", "old2")],
+                    "attribute_columns": [
+                        ("name", "x.md"),
+                        ("tmp_public_url", "https://b.oss/x.md?sig=old"),
+                        ("tmp_expire_time", past_ms),
+                    ],
+                },
+            )()
+        )
+        got = self.client.get("/api/davine/old2/tmp-link").get_json()
+        self.assertEqual(got["url"], "")
+        self.assertTrue(got["expired"])
+        self.assertEqual(got["message"], "临时链接已过期")
+        self.assertTrue(got["expires_at"].startswith("1970-01-01"))
+        # 按需求不清理：表里那条过期链接还在
+        self.assertTrue(
+            any(dict(r.attribute_columns).get("tmp_expire_time") == past_ms for r in self.ots.rows)
+        )
+
+    def test_legacy_link_without_expiry_still_returned(self):
+        self.ots.rows.append(
+            type(
+                "R",
+                (),
+                {
+                    "primary_key": [("id", "old3")],
+                    "attribute_columns": [
+                        ("name", "y.md"),
+                        ("tmp_public_url", "https://b.oss/y.md?sig=1"),
+                    ],
+                },
+            )()
+        )
+        got = self.client.get("/api/davine/old3/tmp-link").get_json()
+        self.assertTrue(got["url"])
+        self.assertIsNone(got["expires_at"])
+
     def test_tmp_link_route_only_on_davine(self):
         self.assertEqual(self.client.get("/api/docs/whatever/tmp-link").status_code, 404)
 

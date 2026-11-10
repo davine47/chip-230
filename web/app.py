@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -671,17 +671,23 @@ def _expire_hours(raw) -> float:
     return hours
 
 
-def _attach_temp_link(doc: dict, hours: float) -> dict:
-    """上传结果里补上过期时间。
+def _iso_ms(ms: int) -> str | None:
+    """毫秒时间戳 → ISO 8601（UTC），前端用 new Date() 按本地时区显示。"""
+    if not ms:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat(timespec="seconds")
 
-    链接本身在上传时就签好并存进表里的 tmp_public_url 了（刷新页面后还能查回来），
-    这里只补 expires_at / expires_hours 给前端展示，不重新签名。
+
+def _attach_temp_link(doc: dict, hours: float) -> dict:
+    """上传结果里补上临时链接和过期时间。
+
+    链接在上传时就签好，连同过期时间（tmp_expire_time）一起存进表里，刷新页面后还能查回来；
+    这里直接用存下的过期时间，和签名里的是同一个值，不再另取 now() 推算。
     """
-    expires = datetime.now(timezone.utc) + timedelta(hours=hours)
     return {
         **doc,
         "temporary_url": doc.get("tmp_public_url", ""),
-        "expires_at": expires.isoformat(timespec="seconds"),
+        "expires_at": _iso_ms(int(doc.get("tmp_expire_time") or 0)),
         "expires_hours": hours,
     }
 
@@ -829,7 +835,21 @@ def register_doc_api(
         url = (doc.get("tmp_public_url") or "").strip()
         if not url:
             return jsonify({"ok": True, "url": "", "message": "无临时链接"})
-        return jsonify({"ok": True, "url": url})
+        expire_ms = int(doc.get("tmp_expire_time") or 0)
+        expires_at = _iso_ms(expire_ms)
+        if expire_ms and expire_ms <= time.time() * 1000:
+            # 过期的链接不清理（按需求保留在表里），但也不再把一个打不开的地址当成有效的发出去
+            return jsonify(
+                {
+                    "ok": True,
+                    "url": "",
+                    "expired": True,
+                    "expires_at": expires_at,
+                    "message": "临时链接已过期",
+                }
+            )
+        # expires_at 为 None：这一列加上之前写入的老数据，过期时间未知
+        return jsonify({"ok": True, "url": url, "expired": False, "expires_at": expires_at})
 
     def delete_view(doc_id: str):
         require_docstore()
