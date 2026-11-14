@@ -29,7 +29,7 @@ from . import oss as oss_helper
 from . import tablestore as ts_helper
 from .config import Settings
 
-COLUMNS = ["name", "url", "describe", "category", "create_time"]
+COLUMNS = ["name", "url", "describe", "category", "create_time", "tags"]
 # 临时链接两列：签名地址（谁拿到都能下载）+ 它的过期时间（毫秒时间戳）。
 # 只有按 id 查单条时才读，列表扫描绝不带出来，免得打开页面就把所有链接都发给浏览器。
 LINK_COLUMNS = ["tmp_public_url", "tmp_expire_time"]
@@ -290,12 +290,16 @@ class DocumentStore:
         """上传时要不要顺带签临时链接：没选有效期就返回空。"""
         return self._sign_key(key, hours) if hours else ("", 0)
 
-    def presign(self, doc_id: str, hours: float = 1) -> str:
-        """按 id 现签一条链接（列表里的「打开」用）。"""
+    def presign_link(self, doc_id: str, hours: float = 1) -> tuple[str, int]:
+        """按 id 现签一条链接，返回 (地址, 过期时间毫秒戳)。"""
         doc = self.get(doc_id)
         if not doc:
             raise KeyError("文档不存在")
-        return self._sign_key(key_from_url(doc["url"]), hours)[0]
+        return self._sign_key(key_from_url(doc["url"]), hours)
+
+    def presign(self, doc_id: str, hours: float = 1) -> str:
+        """按 id 现签一条链接（列表里的「打开」用）。"""
+        return self.presign_link(doc_id, hours)[0]
 
     # ---------------------------------------------------------------- 删
     def delete(self, doc_id: str) -> bool:

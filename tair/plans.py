@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -210,18 +210,26 @@ def get_plan(settings: Settings, plan_uuid: str, plan_id: int) -> dict[str, Any]
     return item
 
 
-def presign_plan(settings: Settings, plan_uuid: str, plan_id: int, hours: int = 1) -> str:
+def presign_plan_link(
+    settings: Settings, plan_uuid: str, plan_id: int, hours: int = 1
+) -> tuple[str, int]:
+    """按计划主键现签一条链接，返回 (地址, 过期时间毫秒戳)。"""
     plan = get_plan(settings, plan_uuid, plan_id)
     if not plan:
         raise KeyError("计划不存在")
     key = key_from_url(plan.get("oss_url", "")) or (
         f"{plans_prefix(settings)}{plan.get('plan_name', '')}.md"
     )
+    expiration = datetime.now(timezone.utc) + timedelta(hours=hours)
     signed = _oss(settings).presign(
         oss.GetObjectRequest(bucket=settings.oss_bucket, key=key),
-        expires=timedelta(hours=hours),
+        expiration=expiration,
     )
-    return signed.url
+    return signed.url, int(expiration.timestamp() * 1000)
+
+
+def presign_plan(settings: Settings, plan_uuid: str, plan_id: int, hours: int = 1) -> str:
+    return presign_plan_link(settings, plan_uuid, plan_id, hours)[0]
 
 
 def delete_plan(settings: Settings, plan_uuid: str, plan_id: int) -> bool:

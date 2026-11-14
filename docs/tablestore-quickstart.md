@@ -30,6 +30,7 @@
 | `url` | STRING | 属性列 | OSS 对象地址 |
 | `describe` | STRING | 属性列 | 描述 |
 | `category` | STRING | 属性列 | 分类，如 `demo` |
+| `tags` | STRING | 属性列（可选） | 多标签，逗号分隔或 JSON 数组；Agent 接口兼容，当前上传流程未写入 |
 | `create_time` | INTEGER | 属性列 | 创建时间，**毫秒**时间戳 |
 
 ```python

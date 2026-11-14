@@ -191,3 +191,24 @@ done
 
 直传没走完（浏览器关了、确认步骤失败）留下的对象，由 `06_reconcile.py` 当作孤儿对象清理。
 
+---
+
+## 十、AI Agent 一次性查询（无 Web 服务）
+
+部署到只有 AI Agent 的服务器时，用 `infra/agent_query.py` 查询表和文档；不需要启动 Web 服务。
+
+```bash
+# 配置检查 / 按标签查文档
+./.venv/bin/python infra/agent_query.py health
+./.venv/bin/python infra/agent_query.py documents --tag env
+
+# 表结构、通用行查询、下载
+./.venv/bin/python infra/agent_query.py tables
+./.venv/bin/python infra/agent_query.py rows oss_documents --tag env --limit 20
+./.venv/bin/python infra/agent_query.py download-document <doc_id> --out /tmp/doc.md
+```
+
+- 工具只读，复用 `.env` 的 AccessKey / OSS / Tablestore 配置；不需要启动 Web 服务。
+- 输出 JSON；扫描上限 10,000 行，`truncated=true` 时缩小过滤条件。
+- Skill 入口：[infra/SKILL.md](infra/SKILL.md)；使用说明：[infra/README.md](infra/README.md)。
+

@@ -4,7 +4,7 @@
 > 1. [命令支持范围与使用限制](https://help.aliyun.com/zh/redis/developer-reference/commands-supported-by-apsaradb-for-redis-community-edition) —— **数据面**：连上实例后能发哪些命令
 > 2. [Python SDK 集成示例](https://help.aliyun.com/zh/redis/developer-reference/call-the-apsaradb-for-redis-api-by-using-alibaba-cloud-sdk-for-python) —— **控制面**：用 AccessKey 调 OpenAPI 管实例
 >
-> 项目内的速查：[白名单](docs/ip-whitelist.md) · [OSS SDK](docs/oss-quickstart.md) · [Tablestore](docs/tablestore-quickstart.md)
+> 项目内的速查：[白名单](docs/ip-whitelist.md) · [OSS SDK](docs/oss-quickstart.md) · [Tablestore](docs/tablestore-quickstart.md) · [AI Agent 工具/Skill](infra/SKILL.md)
 
 这两篇讲的其实是同一套东西的两个层面，实际项目里要配合使用：
 
@@ -224,10 +224,11 @@ chip-230/
 │   ├── app.py                    页面路由 + JSON 接口
 │   ├── templates/                base / index / redis / instance / commands / docstore / plans
 │   └── static/                   style.css / app.js / docstore.js / plans.js
-├── docs/                         三份速查文档
+├── docs/                         速查文档
 │   ├── ip-whitelist.md           白名单配置完整步骤
 │   ├── oss-quickstart.md         OSS SDK V2 速查与踩坑
 │   └── tablestore-quickstart.md  表格存储宽表模型速查与踩坑
+├── infra/                        一次性查询 CLI + Agent Skill（agent_query.py / SKILL.md）
 ├── run.md                        看板启动/停止/排错
 ├── requirements.txt              运行依赖
 ├── pyproject.toml                ruff 代码风格配置（可选，仅开发用）
@@ -495,6 +496,7 @@ OSS_PREFIX=chip-230-demo/          # 演示对象都写在这个前缀下
 | `url` | STRING | 属性列，OSS 对象地址 |
 | `describe` | STRING | 属性列，描述 |
 | `category` | STRING | 属性列，分类 |
+| `tags` | STRING | 属性列（可选），多标签；当前上传流程未写入，Agent 标签查询会兼容 |
 | `create_time` | INTEGER | 属性列，毫秒时间戳 |
 
 ```bash
@@ -508,3 +510,27 @@ python scripts/05_tablestore_demo.py --keep     # 保留演示行
 
 > 注意：Tablestore 的**第一个主键（分区键）不能自增**，所以 `id` 用了字符串 UUID；
 > 想要整型自增得额外加一个分区键列，详见 [docs/tablestore-quickstart.md](docs/tablestore-quickstart.md)。
+
+---
+
+## 十、AI Agent 一次性查询（无 Web 服务）
+
+部署到只有 AI Agent 的机器时，用 `infra/agent_query.py` 直接查询 Tablestore 表和 OSS 文档；**不需要启动后台 Web 服务**。
+
+```bash
+# 配置检查 / 表清单
+./.venv/bin/python infra/agent_query.py health
+./.venv/bin/python infra/agent_query.py tables
+
+# 按标签查 oss_documents（tag 先匹配 category，也兼容 tags 列）
+./.venv/bin/python infra/agent_query.py documents --tag env
+
+# 通用表查询、单文档、下载
+./.venv/bin/python infra/agent_query.py rows oss_documents --tag env --limit 20
+./.venv/bin/python infra/agent_query.py document <doc_id> --expires 24
+./.venv/bin/python infra/agent_query.py download-document <doc_id> --out /tmp/doc.md
+```
+
+- 工具只读，复用根目录 `.env` 的 AccessKey / OSS / Tablestore 配置，不需要启动 Web 服务。
+- 输出 JSON；`truncated=true` 表示扫描达到 10,000 行上限。
+- 作为 Agent Skill 的入口是 [infra/SKILL.md](infra/SKILL.md)，使用说明见 [infra/README.md](infra/README.md)。
