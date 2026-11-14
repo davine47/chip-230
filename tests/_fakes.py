@@ -26,7 +26,7 @@ def settings(**over):
 
 
 class FakeOTS:
-    """只实现 put_row / get_row / get_range，行数据用 2 元组存，读的时候补时间戳。"""
+    """只实现 put_row / get_row / get_range / delete_row，行数据用 2 元组存，读的时候补时间戳。"""
 
     def __init__(self):
         self.rows = []
@@ -62,6 +62,10 @@ class FakeOTS:
             rows.append(types.SimpleNamespace(primary_key=row.primary_key, attribute_columns=attrs))
         return None, None, rows, None
 
+    def delete_row(self, table, primary_key, condition):
+        want = dict(primary_key).get("id")
+        self.rows = [row for row in self.rows if dict(row.primary_key).get("id") != want]
+
 
 class _Uploader:
     def __init__(self, oss):
@@ -73,13 +77,14 @@ class _Uploader:
 
 
 class FakeOSS:
-    def __init__(self, size=10, missing=False):
+    def __init__(self, size=10, missing=False, existing=None):
         self.size, self.missing = size, missing
+        self.existing = set(existing or [])
         self.deleted: list[str] = []
         self.uploaded: list[str] = []
 
     def is_object_exist(self, bucket, key):
-        return False
+        return key in self.existing
 
     def uploader(self):
         return _Uploader(self)

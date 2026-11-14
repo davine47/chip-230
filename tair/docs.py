@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import re
+import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -102,8 +103,14 @@ class DocumentStore:
         request_id: str = "",
         tmp_public_url: str = "",
         tmp_expire_time: int = 0,
+        replace: bool = False,
     ) -> dict[str, Any]:
-        """往索引表写一行，返回给前端的完整字段。"""
+        """往索引表写一行，返回给前端的完整字段。
+
+        replace=True 时先查同名旧记录，等新行写入成功后再删旧行和旧对象。
+        先写新行再删旧记录，是为了避免删除成功但新索引写入失败导致数据丢失。
+        """
+        old_docs = self._same_name(name) if replace else []
         doc_id = uuid.uuid4().hex
         now_ms = int(time.time() * 1000)
         attrs = [("name", name), ("url", url)]
@@ -115,7 +122,7 @@ class DocumentStore:
         _ts(self.settings).put_row(
             self.table, Row([("id", doc_id)], attrs), Condition(RowExistenceExpectation.IGNORE)
         )
-        return {
+        result = {
             "id": doc_id,
             "name": name,
             "url": url,
@@ -128,6 +135,71 @@ class DocumentStore:
             "tmp_public_url": tmp_public_url,
             "tmp_expire_time": tmp_expire_time,
         }
+        if replace:
+            replaced = 0
+            failed: list[str] = []
+            for old in old_docs:
+                if self._delete_replaced(old, url):
+                    replaced += 1
+                else:
+                    failed.append(str(old.get("id") or ""))
+            result["replaced_count"] = replaced
+            if failed:
+                result["replace_failed"] = failed
+        return result
+
+    def _same_name(self, name: str) -> list[dict[str, Any]]:
+        """在本看板自己的表（self.table）里按文件名找全部旧记录，只比 name，不看分类。
+
+        这里不能用 scan()：它为了列表页响应快，最多扫 SCAN_MAX_ROWS 行就停，
+        而主键是随机 uuid，前 N 行是全表的随机子集，同名旧记录可能恰好落在后面，
+        替换就会悄悄漏删。所以这里不设上限、扫到表尾，只取比对和删除要用的两列。
+        """
+        rows, _ = ts_helper.scan_all(
+            _ts(self.settings),
+            self.table,
+            [("id", INF_MIN)],
+            [("id", INF_MAX)],
+            ["name", "url"],
+            max_rows=None,
+        )
+        found = []
+        for row in rows:
+            item = ts_helper.primary_key_dict(row)
+            item.update(ts_helper.row_to_dict(row))
+            if item.get("name") == name:
+                found.append(item)
+        return found
+
+    def _delete_replaced(self, old: dict[str, Any], new_url: str) -> bool:
+        """删除一条同名旧记录及其 OSS 对象。
+
+        新旧 key 相同时不删对象：说明新上传已经覆盖了同一个对象，删掉会把新文件一起删了。
+        删对象成功但删行失败时保留旧行，交给对账脚本/人工重试；不把上传本身判失败。
+        """
+        old_id = str(old.get("id") or "")
+        if not old_id:
+            return False
+        old_key = key_from_url(old.get("url", ""))
+        new_key = key_from_url(new_url)
+        try:
+            if old_key and old_key != new_key:
+                _oss(self.settings).delete_object(
+                    oss.DeleteObjectRequest(bucket=self.settings.oss_bucket, key=old_key)
+                )
+            _ts(self.settings).delete_row(
+                self.table,
+                [("id", old_id)],
+                Condition(RowExistenceExpectation.IGNORE),
+            )
+        except Exception as exc:  # noqa: BLE001 - 删除失败不阻断新数据入库
+            print(
+                f"[warn] 同名更新时删除旧记录失败 id={old_id}：{exc}"
+                "（可运行 scripts/06_reconcile.py 检查）",
+                file=sys.stderr,
+            )
+            return False
+        return True
 
     def save_from_file(
         self,
@@ -136,6 +208,7 @@ class DocumentStore:
         category: str,
         description: str,
         tmp_hours: float | None = None,
+        replace: bool = False,
     ) -> dict[str, Any]:
         """大文件：交给 uploader 做分片上传，内存占用和文件大小无关。"""
         settings = self.settings
@@ -163,6 +236,7 @@ class DocumentStore:
                 getattr(result, "etag", "") or "",
                 "",
                 *self._tmp_link(key, tmp_hours),
+                replace=replace,
             )
         except Exception:
             # 索引没写进去，对象就是孤儿：看板列不出来、也删不掉，所以立刻回滚
@@ -206,6 +280,7 @@ class DocumentStore:
         description: str,
         max_bytes: int,
         tmp_hours: float | None = None,
+        replace: bool = False,
     ) -> dict[str, Any]:
         """浏览器直传第二步：确认对象真的在 OSS 上、大小合规，再写索引。
 
@@ -235,6 +310,7 @@ class DocumentStore:
                 (getattr(head, "etag", "") or "").strip('"'),
                 "",
                 *self._tmp_link(key, tmp_hours),
+                replace=replace,
             )
         except Exception:
             oss_helper.discard_object(client, settings.oss_bucket, key)

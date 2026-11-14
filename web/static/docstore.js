@@ -9,6 +9,7 @@
     category: $("category"),
     categoryList: $("categoryList"),
     description: $("description"),
+    replaceSame: $("replaceSame"),
     uploadBtn: $("uploadBtn"),
     uploadHint: $("uploadHint"),
     progress: $("progress"),
@@ -336,7 +337,8 @@
 
   // 返回上传结果；返回 null 表示这次应该走服务器中转
   async function uploadDirect(file, category, description) {
-    const payload = { filename: file.name, size: file.size, category, description };
+    const replace = Boolean(els.replaceSame && els.replaceSame.checked);
+    const payload = { filename: file.name, size: file.size, category, description, replace };
     if (els.expireHours) payload.expire_hours = els.expireHours.value;
     const init = await postJSON(`${api}/upload-url`, payload);
     if (init.mode !== "direct") return null;
@@ -417,10 +419,17 @@
         body.append("file", picked);
         body.append("category", category);
         body.append("description", description);
+        body.append("replace", els.replaceSame && els.replaceSame.checked ? "1" : "0");
         if (els.expireHours) body.append("expire_hours", els.expireHours.value);
         data = await postForm(`${api}/upload`, body);
       }
-      toast(`已上传 ${data.document.name}`);
+      const replaced = Number(data.document.replaced_count || 0);
+      const failed = (data.document.replace_failed || []).length;
+      if (failed) {
+        toast(`已上传 ${data.document.name}，但 ${failed} 条旧记录删除失败`, true);
+      } else {
+        toast(replaced ? `已更新 ${data.document.name}，删除 ${replaced} 条旧记录` : `已上传 ${data.document.name}`);
+      }
       // 顺序不能反：form.reset() 会把表单内的 #resultUrl 一起清空
       els.form.reset();
       setFile(null);

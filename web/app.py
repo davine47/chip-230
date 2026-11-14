@@ -692,6 +692,11 @@ def _attach_temp_link(doc: dict, hours: float) -> dict:
     }
 
 
+def _truthy(raw) -> bool:
+    """解析表单/JSON 里的布尔开关（1/true/yes/on）。"""
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def register_doc_api(
     name: str,
     factory,
@@ -726,6 +731,7 @@ def register_doc_api(
         filename = str(payload.get("filename") or "").strip()
         category = str(payload.get("category") or "").strip()
         description = str(payload.get("description") or "").strip()
+        replace = _truthy(payload.get("replace"))
         size = int(payload.get("size") or 0)
         if not filename:
             raise ValueError("请选择要上传的文件")
@@ -746,6 +752,7 @@ def register_doc_api(
             category=category,
             description=description,
             expire_hours=hours,
+            replace=replace,
         )
         return jsonify(
             {
@@ -770,6 +777,7 @@ def register_doc_api(
                 entry["description"],
                 max_bytes,
                 tmp_hours=entry.get("expire_hours"),
+                replace=bool(entry.get("replace")),
             )
         except ValueError:
             PENDING_UPLOADS.discard(upload_id)  # 对象已被删掉，这张凭证也没用了
@@ -791,6 +799,7 @@ def register_doc_api(
         file = request.files.get("file")
         category = (request.form.get("category") or "").strip()
         description = (request.form.get("description") or "").strip()
+        replace = _truthy(request.form.get("replace"))
 
         if file is None or not file.filename:
             raise ValueError("请选择要上传的文件")
@@ -814,6 +823,7 @@ def register_doc_api(
                 category=category,
                 description=description,
                 tmp_hours=hours,
+                replace=replace,
             )
         finally:
             os.unlink(tmp.name)

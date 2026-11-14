@@ -61,12 +61,15 @@ def scan_all(
     start_pk: list,
     end_pk: list,
     columns: list[str] | None = None,
-    max_rows: int = SCAN_MAX_ROWS,
+    max_rows: int | None = SCAN_MAX_ROWS,
 ) -> tuple[list, bool]:
     """分页扫完 [start_pk, end_pk) 整个范围，返回 (行列表, 是否因超过 max_rows 被截断)。
 
     只调一次 get_range 只能拿到第一页；而且行是按主键排序的，不是按时间，
     所以「取前 N 行再按时间排序」得到的并不是最新的 N 行。
+
+    max_rows=None 表示不设上限、一直扫到表尾（此时第二个返回值恒为 False）。
+    看板列表要防止一次请求扫太久，用默认上限；同名更新这类「漏一条就出错」的场景用 None。
     """
     rows: list = []
     next_pk = start_pk
@@ -77,9 +80,9 @@ def scan_all(
             next_pk,
             end_pk,
             columns_to_get=columns,
-            limit=min(SCAN_PAGE_ROWS, max_rows - len(rows)),
+            limit=SCAN_PAGE_ROWS if max_rows is None else min(SCAN_PAGE_ROWS, max_rows - len(rows)),
         )
         rows.extend(page or [])
-        if len(rows) >= max_rows:
+        if max_rows is not None and len(rows) >= max_rows:
             return rows, next_pk is not None
     return rows, False
